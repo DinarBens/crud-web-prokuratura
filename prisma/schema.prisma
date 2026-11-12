@@ -67,9 +67,10 @@ model Camera {
   facility   Facility? @relation(fields: [facilityId], references: [id], onDelete: SetNull)
   latitude   Float?
   longitude  Float?
-  // online | offline | degraded
-  status     String    @default("online")
-  lastSeenAt DateTime?
+  // online | offline — выставляется проверкой потока (/api/cameras/health), а не вручную
+  status        String    @default("online")
+  lastSeenAt    DateTime? // когда поток последний раз отдавал видео
+  lastCheckedAt DateTime? // когда проверяли
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   screens    Screen[]
