@@ -193,9 +193,9 @@ export default function ObjectsPage() {
                                       {c.status === "online" ? "● в сети" : "● не в сети"}
                                     </div>
                                   </div>
-                                  <Button size="sm" onClick={() => setWatch(c)} className="h-7 text-[11px] gap-1 cursor-pointer bg-primary text-primary-foreground">
+                                  {!c.streamUrl.startsWith("demo://") && <Button size="sm" onClick={() => setWatch(c)} className="h-7 text-[11px] gap-1 cursor-pointer bg-primary text-primary-foreground">
                                     <Play className="size-3 fill-current" /> Смотреть
-                                  </Button>
+                                  </Button>}
                                 </div>
                               ))}
                               {(f.cameras ?? []).length === 0 && <div className="text-xs text-muted-foreground">Камеры не привязаны</div>}

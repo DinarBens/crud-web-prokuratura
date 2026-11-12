@@ -22,6 +22,7 @@ export async function GET(request: Request) {
         timestamp: true,
         severity: true,
         status: true,
+        isDemo: true,
         facility: { select: { id: true, name: true, sector: true, district: true } },
         actions: { select: { createdAt: true }, orderBy: { createdAt: "asc" }, take: 1 },
       },
@@ -61,7 +62,8 @@ export async function GET(request: Request) {
       const isOpen = STATUS_META[st]?.open ?? true
       if (isOpen) {
         open++
-        if (now - e.timestamp.getTime() > SLA_MINUTES[sev] * 60_000) overdue++
+        // Просрочена реакция = инцидент не взят в работу дольше норматива
+        if (st === "NEW" && now - e.timestamp.getTime() > SLA_MINUTES[sev] * 60_000) overdue++
       }
       if (st === "RESOLVED") resolved++
       if (st === "FALSE_ALARM") falseAlarm++
@@ -120,6 +122,7 @@ export async function GET(request: Request) {
       days,
       totals: {
         total: events.length,
+        demo: events.filter((e) => e.isDemo).length,
         critical,
         warning,
         info,

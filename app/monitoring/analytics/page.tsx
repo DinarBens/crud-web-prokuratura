@@ -21,6 +21,7 @@ interface Analytics {
     falseAlarm: number
     avgReactionMin: number | null
     falseAlarmRate: number
+    demo: number
   }
   bySector: { sector: Sector; label: string; total: number; critical: number; open: number }[]
   byDistrict: { district: string; total: number; critical: number; open: number }[]
@@ -68,6 +69,26 @@ export default function AnalyticsPage() {
   }, [load])
 
   const t = data?.totals
+  const [demoBusy, setDemoBusy] = useState(false)
+  const [demoMsg, setDemoMsg] = useState<string | null>(null)
+
+  // Демо-данные (имитация): загрузить или убрать. Реальные записи не затрагиваются.
+  const toggleDemo = async (enable: boolean) => {
+    if (!enable && !window.confirm("Убрать все демонстрационные объекты, камеры и инциденты? Реальные данные не затрагиваются.")) return
+    setDemoBusy(true)
+    setDemoMsg(null)
+    try {
+      const r = await fetch("/api/admin/demo", { method: enable ? "POST" : "DELETE" })
+      const json = await r.json()
+      if (!r.ok) throw new Error(json.error || "Ошибка")
+      setDemoMsg(enable ? `Загружено: ${json.facilities} объектов, ${json.incidents} инцидентов` : "Демо-данные убраны")
+      await load()
+    } catch (e) {
+      setDemoMsg(e instanceof Error ? e.message : "Ошибка")
+    } finally {
+      setDemoBusy(false)
+    }
+  }
 
   return (
     <DashboardLayout breadcrumbs={[{ label: "Мониторинг" }, { label: "Аналитика", active: true }]}>
@@ -95,6 +116,25 @@ export default function AnalyticsPage() {
           </div>
 
           {error && <div className="p-3 text-xs bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg">{error}</div>}
+
+          {t && (t.demo > 0 ? (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+              <span>
+                Включены демонстрационные данные (имитация): {t.demo} из {t.total} событий за период. Реальные записи не изменены.
+                {demoMsg && <span className="ml-2 font-medium">{demoMsg}</span>}
+              </span>
+              <button type="button" disabled={demoBusy} onClick={() => toggleDemo(false)} className="w-fit cursor-pointer font-medium underline disabled:opacity-50">
+                Убрать демо-данные
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
+              {demoMsg && <span>{demoMsg}</span>}
+              <button type="button" disabled={demoBusy} onClick={() => toggleDemo(true)} className="cursor-pointer underline disabled:opacity-50">
+                {demoBusy ? "Загружаем…" : "Загрузить демо-данные для показа"}
+              </button>
+            </div>
+          ))}
 
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
             <Kpi icon={<Activity className="size-5" />} label="Всего событий" value={t?.total} />

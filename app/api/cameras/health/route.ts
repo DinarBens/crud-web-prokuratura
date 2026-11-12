@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     const sp = new URL(request.url).searchParams
     const facilityId = sp.get("facilityId")
     const cameras = await db.camera.findMany({
-      where: facilityId ? { facilityId } : undefined,
+      where: { isDemo: false, ...(facilityId ? { facilityId } : {}) },
       select: { id: true, streamUrl: true },
     })
 

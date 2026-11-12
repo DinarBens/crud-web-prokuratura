@@ -6,7 +6,8 @@ export async function GET(request: Request) {
     const sp = new URL(request.url).searchParams
     const facilityId = sp.get("facilityId")
     const cameras = await db.camera.findMany({
-      where: facilityId ? { facilityId } : undefined,
+      // Демо-камеры (имитация) в общий список видеоисточников не попадают
+      where: facilityId ? { facilityId } : { isDemo: false },
       include: { facility: { select: { id: true, name: true, sector: true, district: true } } },
       orderBy: { createdAt: "desc" },
     })

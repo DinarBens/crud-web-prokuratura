@@ -19,6 +19,7 @@ interface IncidentDetail {
   status: string
   forwardedTo: string | null
   resolvedAt: string | null
+  isDemo?: boolean
   facility: {
     name: string
     sector: string
@@ -93,7 +94,7 @@ export function IncidentDialog({
   const sev = (data?.severity as Severity) ?? "info"
   const isOpen = data ? STATUS_META[data.status as IncidentStatus]?.open : false
   const ageMin = data ? (Date.now() - new Date(data.timestamp).getTime()) / 60000 : 0
-  const overdue = isOpen && ageMin > SLA_MINUTES[sev]
+  const overdue = isOpen && data?.status === "NEW" && ageMin > SLA_MINUTES[sev]
 
   return (
     <Dialog open={incidentId !== null} onOpenChange={(o) => !o && onClose()}>
@@ -103,6 +104,11 @@ export function IncidentDialog({
             {data?.type ?? "Инцидент"}
             {data && <StatusBadge status={SEVERITY_META[sev].badge} />}
             {data && <IncidentStatusBadge status={data.status} />}
+            {data?.isDemo && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30">
+                Демо-запись (имитация)
+              </span>
+            )}
             {overdue && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20">
                 <AlertTriangle className="size-3" /> Просрочена реакция (норматив {SLA_MINUTES[sev]} мин)
@@ -149,7 +155,7 @@ export function IncidentDialog({
 
             <p className="text-xs text-muted-foreground leading-relaxed border-t border-border/40 pt-4">{data.details}</p>
 
-            {data.camera?.streamUrl && (
+            {data.camera?.streamUrl && !data.camera.streamUrl.startsWith("demo://") && (
               showVideo ? (
                 <StreamViewer streamUrl={data.camera.streamUrl} cameraName={data.camera.name} />
               ) : (
@@ -212,7 +218,7 @@ export function IncidentDialog({
                 {data.actions.map((a) => (
                   <li key={a.id} className="text-xs">
                     <span className="font-mono text-muted-foreground">{formatDateTime(a.createdAt)}</span>{" "}
-                    <span className="font-medium">{a.user?.name ?? a.user?.email ?? "Система"}</span>
+                    <span className="font-medium">{a.user?.name ?? a.user?.email ?? "Дежурная смена"}</span>
                     {a.toStatus && <> → {STATUS_META[a.toStatus as IncidentStatus]?.label ?? a.toStatus}</>}
                     {a.comment && <span className="text-muted-foreground">. {a.comment}</span>}
                   </li>
