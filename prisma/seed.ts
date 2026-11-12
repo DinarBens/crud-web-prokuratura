@@ -34,13 +34,36 @@ const initialCities = [
   { name: "Усть-Каменогорск", latitude: 49.9483, longitude: 82.6278, status: "stable", connections: 36, latency: 36, loadPercent: 58 },
 ]
 
-// Примерные центры районов Шымкента (для демо-размещения объектов на карте)
-const DISTRICT_CENTERS: Record<(typeof DISTRICTS)[number], [number, number]> = {
-  "Абайский": [42.345, 69.545],
-  "Аль-Фарабийский": [42.318, 69.598],
-  "Енбекшинский": [42.355, 69.640],
-  "Каратауский": [42.395, 69.590],
-  "Туранский": [42.285, 69.560],
+// Реальные границы районов (OpenStreetMap) — демо-объекты ставятся строго внутри своего района,
+// ближе к городской застройке (в радиусе ~9 км от центра), а не в полях на окраинах
+const DISTRICT_GEO = JSON.parse(fs.readFileSync("public/data/shymkent-districts.geojson", "utf8")) as {
+  features: { properties: { district: string }; bbox: number[]; geometry: { coordinates: number[][][] } }[]
+}
+const CITY_CENTER: [number, number] = [69.596, 42.317] // [lng, lat]
+
+function insideRing(pt: [number, number], ring: number[][]) {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]
+    const [xj, yj] = ring[j]
+    if (yi > pt[1] !== yj > pt[1] && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+
+function randomPointIn(district: string): [number, number] {
+  const f = DISTRICT_GEO.features.find((x) => x.properties.district === district)!
+  const [minX, minY, maxX, maxY] = f.bbox
+  const ring = f.geometry.coordinates[0]
+  for (const radiusKm of [9, 14, 1000]) {
+    for (let i = 0; i < 400; i++) {
+      const pt: [number, number] = [minX + rnd() * (maxX - minX), minY + rnd() * (maxY - minY)]
+      const dx = (pt[0] - CITY_CENTER[0]) * 82 // км на градус долготы на широте Шымкента
+      const dy = (pt[1] - CITY_CENTER[1]) * 111
+      if (Math.hypot(dx, dy) <= radiusKm && insideRing(pt, ring)) return [pt[1], pt[0]] // [lat, lng]
+    }
+  }
+  return [(minY + maxY) / 2, (minX + maxX) / 2]
 }
 
 const STREETS = ["пр. Тауке хана", "ул. Байтурсынова", "пр. Республики", "ул. Казыбек би", "ул. Толе би", "пр. Кунаева", "ул. Жибек жолы", "ул. Рыскулова", "ул. Абая", "пр. Аль-Фараби"]
@@ -158,9 +181,7 @@ async function main() {
     }
     usedNames.add(name)
 
-    const [clat, clng] = DISTRICT_CENTERS[spec.district]
-    const lat = clat + (rnd() - 0.5) * 0.04
-    const lng = clng + (rnd() - 0.5) * 0.05
+    const [lat, lng] = randomPointIn(spec.district)
     const f = await prisma.facility.create({
       data: {
         name,

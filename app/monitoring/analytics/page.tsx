@@ -39,6 +39,15 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Район и сектор из адреса (переход с карты: ?district=Абайский)
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search)
+    const dist = sp.get("district")
+    if (dist) setDistrict(dist)
+    const s = sp.get("sector")
+    if (s) setSector(s as Sector)
+  }, [])
+
   const load = React.useCallback(async () => {
     setLoading(true)
     setError(null)
