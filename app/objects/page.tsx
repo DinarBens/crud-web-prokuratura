@@ -48,6 +48,8 @@ export default function ObjectsPage() {
     const sp = new URLSearchParams(window.location.search)
     const s = sp.get("sector")
     if (s) setSector(s as Sector)
+    const dist = sp.get("district")
+    if (dist) setDistrict(dist)
     const q = sp.get("query")
     if (q) setQuery(q)
   }, [])

@@ -43,47 +43,38 @@ const facilityIcon = (f: MapFacility) => {
   });
 };
 
-type AreaKey = "district" | "city";
+// Районы г. Шымкент. Границы — OpenStreetMap (город: relation 3389772, районы: см. shymkent-districts.geojson)
+const DISTRICT_AREAS = [
+  { key: "abay", district: "Абайский", label: "Абайский" },
+  { key: "alfarabi", district: "Аль-Фарабийский", label: "Аль-Фараби" },
+  { key: "enbekshi", district: "Енбекшинский", label: "Енбекшинский" },
+  { key: "karatau", district: "Каратауский", label: "Каратауский" },
+  { key: "turan", district: "Туранский", label: "Туран" },
+] as const;
 
-interface AreaConfig {
-  label: string;
-  title: string;
-  subtitle: string;
-  url: string;
-  bounds: LatLngBoundsExpression;
-  maxBounds: LatLngBoundsExpression;
-}
+type DistrictKey = (typeof DISTRICT_AREAS)[number]["key"];
+type AreaKey = "city" | DistrictKey;
 
-// Границы из OpenStreetMap: район — relation 5550509, город — relation 3389772
-const AREAS: Record<AreaKey, AreaConfig> = {
-  district: {
-    label: "Аль-Фараби",
-    title: "Аль-Фарабийский район",
-    subtitle: "г. Шымкент",
-    url: "/data/al-farabi.geojson",
-    bounds: [[42.1090, 69.4836], [42.3480, 69.6521]],
-    maxBounds: [[42.05, 69.38], [42.41, 69.76]],
-  },
-  city: {
-    label: "Весь город",
-    title: "г. Шымкент",
-    subtitle: "Все районы",
-    url: "/data/shymkent.geojson",
-    bounds: [[42.1090, 69.3018], [42.4794, 69.9357]],
-    maxBounds: [[42.03, 69.18], [42.56, 70.06]],
-  },
-};
+const CITY_BOUNDS: LatLngBoundsExpression = [[42.1090, 69.3018], [42.4794, 69.9357]];
+const CITY_MAX_BOUNDS: LatLngBoundsExpression = [[42.03, 69.18], [42.56, 70.06]];
 
-const AREA_KEYS: AreaKey[] = ["city", "district"];
+const isAreaKey = (v: string | null): v is AreaKey =>
+  v === "city" || DISTRICT_AREAS.some((d) => d.key === v);
+
+// bbox GeoJSON [minLng, minLat, maxLng, maxLat] → границы Leaflet (+ запас для перетаскивания)
+const bboxToBounds = (bbox: number[], pad = 0): LatLngBoundsExpression => [
+  [bbox[1] - pad, bbox[0] - pad],
+  [bbox[3] + pad, bbox[2] + pad],
+];
 
 // Перелетает к выбранной области и ограничивает перетаскивание её рамкой
-function FitArea({ area }: { area: AreaConfig }) {
+function FitArea({ bounds, maxBounds }: { bounds: LatLngBoundsExpression; maxBounds: LatLngBoundsExpression }) {
   const map = useMap();
   useEffect(() => {
     map.setMaxBounds(undefined);
-    map.flyToBounds(area.bounds, { duration: 0.8 });
-    map.once("moveend", () => map.setMaxBounds(area.maxBounds));
-  }, [map, area]);
+    map.flyToBounds(bounds, { duration: 0.8, paddingTopLeft: [24, 150], paddingBottomRight: [24, 24] });
+    map.once("moveend", () => map.setMaxBounds(maxBounds));
+  }, [map, bounds, maxBounds]);
   return null;
 }
 
@@ -141,13 +132,28 @@ const buildOutsideMask = (district: FeatureCollection): Feature<Polygon> | null 
 
 export default function LeafletMap() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [areaKey, setAreaKey] = useState<AreaKey>("city");
-  const [boundaries, setBoundaries] = useState<Partial<Record<AreaKey, FeatureCollection>>>({});
+  const [areaKey, setAreaKeyState] = useState<AreaKey>("city");
+  const [city, setCity] = useState<FeatureCollection | null>(null);
+  const [districts, setDistricts] = useState<FeatureCollection | null>(null);
   const [facilities, setFacilities] = useState<MapFacility[] | null>(null);
   const [layers, setLayers] = useState<Record<Sector, boolean>>(
     () => Object.fromEntries(SECTORS.map((s) => [s, true])) as Record<Sector, boolean>
   );
   const [onlyAlerts, setOnlyAlerts] = useState(false);
+
+  // Выбранный район хранится в адресе (?district=abay) — ссылкой можно поделиться
+  const setAreaKey = (key: AreaKey) => {
+    setAreaKeyState(key);
+    const url = new URL(window.location.href);
+    if (key === "city") url.searchParams.delete("district");
+    else url.searchParams.set("district", key);
+    window.history.replaceState(null, "", url.toString());
+  };
+
+  useEffect(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get("district");
+    if (isAreaKey(fromUrl)) setAreaKeyState(fromUrl);
+  }, []);
 
   useEffect(() => {
     const loadFacilities = () =>
@@ -160,20 +166,38 @@ export default function LeafletMap() {
     return () => clearInterval(t);
   }, []);
 
+  const selected = DISTRICT_AREAS.find((d) => d.key === areaKey) ?? null;
+
+  const districtFacilities = useMemo(
+    () => (facilities ?? []).filter((f) => !selected || f.district === selected.district),
+    [facilities, selected]
+  );
   const visibleFacilities = useMemo(
-    () => (facilities ?? []).filter((f) => layers[f.sector] && (!onlyAlerts || f.openIncidents > 0)),
-    [facilities, layers, onlyAlerts]
+    () => districtFacilities.filter((f) => layers[f.sector] && (!onlyAlerts || f.openIncidents > 0)),
+    [districtFacilities, layers, onlyAlerts]
   );
   const sectorCounts = useMemo(() => {
     const c: Partial<Record<Sector, { n: number; alerts: number }>> = {};
-    (facilities ?? []).forEach((f) => {
+    districtFacilities.forEach((f) => {
       const cur = c[f.sector] ?? { n: 0, alerts: 0 };
       cur.n++;
       if (f.openIncidents > 0) cur.alerts++;
       c[f.sector] = cur;
     });
     return c;
+  }, [districtFacilities]);
+  // Сводка по районам — для подсказок на карте
+  const districtStats = useMemo(() => {
+    const m: Record<string, { n: number; open: number }> = {};
+    (facilities ?? []).forEach((f) => {
+      const cur = m[f.district] ?? { n: 0, open: 0 };
+      cur.n++;
+      cur.open += f.openIncidents;
+      m[f.district] = cur;
+    });
+    return m;
   }, [facilities]);
+  const statsKey = JSON.stringify(districtStats);
   const hasFacilities = (facilities?.length ?? 0) > 0;
 
   useEffect(() => {
@@ -193,20 +217,33 @@ export default function LeafletMap() {
     const isDark = document.documentElement.classList.contains("dark");
     setTheme(isDark ? "dark" : "light");
 
-    AREA_KEYS.forEach((key) => {
-      fetch(AREAS[key].url)
-        .then(res => res.json())
-        .then(data => setBoundaries(prev => ({ ...prev, [key]: data })))
-        .catch(err => console.error(`Error loading ${key} GeoJSON`, err));
-    });
+    fetch("/data/shymkent.geojson")
+      .then((res) => res.json())
+      .then(setCity)
+      .catch((err) => console.error("Error loading city GeoJSON", err));
+    fetch("/data/shymkent-districts.geojson")
+      .then((res) => res.json())
+      .then(setDistricts)
+      .catch((err) => console.error("Error loading districts GeoJSON", err));
 
     return () => observer.disconnect();
   }, []);
 
-  const area = AREAS[areaKey];
-  const boundary = boundaries[areaKey];
-  const district = boundaries.district;
+  const selectedFeature = useMemo(
+    () => districts?.features.find((f) => f.properties?.key === areaKey) ?? null,
+    [districts, areaKey]
+  );
+  const boundary: FeatureCollection | null = useMemo(() => {
+    if (areaKey === "city") return city;
+    return selectedFeature ? { type: "FeatureCollection", features: [selectedFeature] } : null;
+  }, [areaKey, city, selectedFeature]);
   const outsideMask = useMemo(() => (boundary ? buildOutsideMask(boundary) : null), [boundary]);
+
+  const { bounds, maxBounds } = useMemo(() => {
+    const bbox = selectedFeature?.bbox as number[] | undefined;
+    if (areaKey === "city" || !bbox) return { bounds: CITY_BOUNDS, maxBounds: CITY_MAX_BOUNDS };
+    return { bounds: bboxToBounds(bbox), maxBounds: bboxToBounds(bbox, 0.08) };
+  }, [areaKey, selectedFeature]);
 
   const accent = theme === "dark" ? "#34d399" : "#15803d";
 
@@ -214,29 +251,68 @@ export default function LeafletMap() {
     ? "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
     : "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
 
+  // Районы на карте: клик — выбрать район, наведение — подсветка и подсказка
+  const onEachDistrict = (feature: Feature, layer: L.Layer) => {
+    const key = feature.properties?.key as DistrictKey;
+    const name = feature.properties?.district as string;
+    const st = districtStats[name];
+    const path = layer as L.Path;
+    path.bindTooltip(
+      `<b>${name} район</b>${st ? `<br/>Объектов: ${st.n} · открытых инцидентов: ${st.open}` : ""}`,
+      { sticky: true, direction: "top", className: "font-sans text-xs" }
+    );
+    path.on({
+      click: () => setAreaKey(key),
+      mouseover: () => path.setStyle({ fillOpacity: 0.18, weight: 2.5 }),
+      mouseout: () => path.setStyle({ fillOpacity: 0.04, weight: 1.5 }),
+    });
+  };
+  // Остальные районы (те, что не выбраны) — пунктиром, кликабельны
+  const otherDistricts: FeatureCollection | null = useMemo(() => {
+    if (!districts) return null;
+    return {
+      type: "FeatureCollection",
+      features: districts.features.filter((f) => f.properties?.key !== areaKey),
+    };
+  }, [districts, areaKey]);
+
+  const areaTitle = selected ? `${selected.district} район` : "г. Шымкент";
+  const areaSubtitle = selected
+    ? `${districtFacilities.length} объектов · ${districtFacilities.reduce((a, f) => a + f.openIncidents, 0)} открытых инцидентов`
+    : "Все районы — нажмите на район на карте";
+
   return (
     <div className="w-full h-full relative z-0" style={{ minHeight: "calc(100vh - 64px)" }}>
-      <div className="absolute left-4 top-4 z-[1000] flex flex-col gap-2 rounded-md border border-border bg-background/90 p-2 shadow-sm backdrop-blur">
+      <div className="absolute left-4 top-4 z-[1000] flex max-w-[calc(100%-5rem)] flex-col gap-2 rounded-md border border-border bg-background/90 p-2 shadow-sm backdrop-blur">
         <div className="px-1">
-          <div className="text-sm font-semibold text-foreground">{area.title}</div>
-          <div className="text-xs text-muted-foreground">{area.subtitle}</div>
+          <div className="text-sm font-semibold text-foreground">{areaTitle}</div>
+          <div className="text-xs text-muted-foreground">{areaSubtitle}</div>
         </div>
-        <div className="flex items-center gap-1 rounded-lg border border-border/80 bg-secondary/40 p-1">
-          {AREA_KEYS.map((key) => (
+        <div className="flex flex-wrap items-center gap-1 rounded-lg border border-border/80 bg-secondary/40 p-1" role="tablist" aria-label="Район">
+          {(["city", ...DISTRICT_AREAS.map((d) => d.key)] as AreaKey[]).map((key) => (
             <button
               key={key}
               type="button"
+              role="tab"
+              aria-selected={areaKey === key}
               onClick={() => setAreaKey(key)}
-              className={`h-7 cursor-pointer rounded-md px-3 text-xs font-medium transition-colors ${
+              className={`h-7 cursor-pointer rounded-md px-2.5 text-xs font-medium transition-colors ${
                 areaKey === key
                   ? "bg-card text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {AREAS[key].label}
+              {key === "city" ? "Весь город" : DISTRICT_AREAS.find((d) => d.key === key)?.label}
             </button>
           ))}
         </div>
+        {selected && (
+          <div className="flex gap-3 px-1 text-[11px]">
+            <a href={`/incidents?district=${encodeURIComponent(selected.district)}`} className="text-primary hover:underline">Инциденты района</a>
+            <a href={`/objects?district=${encodeURIComponent(selected.district)}`} className="text-primary hover:underline">Объекты района</a>
+            <a href={`/monitoring/analytics?district=${encodeURIComponent(selected.district)}`} className="text-primary hover:underline">Аналитика</a>
+          </div>
+        )}
       </div>
 
       {/* Слои объектов */}
@@ -261,6 +337,9 @@ export default function LeafletMap() {
               </span>
             </label>
           ))}
+          {SECTORS.every((s) => !sectorCounts[s]) && (
+            <div className="text-[11px] text-muted-foreground">В этом районе объектов пока нет</div>
+          )}
           <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer border-t border-border/60 pt-1.5 mt-1">
             <input type="checkbox" checked={onlyAlerts} onChange={(e) => setOnlyAlerts(e.target.checked)} className="accent-red-500" />
             Только с открытыми инцидентами
@@ -269,8 +348,8 @@ export default function LeafletMap() {
       )}
 
       <MapContainer
-        bounds={AREAS.city.bounds}
-        maxBounds={AREAS.city.maxBounds}
+        bounds={CITY_BOUNDS}
+        maxBounds={CITY_MAX_BOUNDS}
         maxBoundsViscosity={1}
         zoomSnap={0.25}
         minZoom={10}
@@ -288,7 +367,7 @@ export default function LeafletMap() {
           />
         )}
         <ZoomControl position="topright" />
-        <FitArea area={area} />
+        <FitArea bounds={bounds} maxBounds={maxBounds} />
 
         {outsideMask && (
           <GeoJSON
@@ -303,22 +382,28 @@ export default function LeafletMap() {
           />
         )}
 
+        {/* Границы районов: в режиме «весь город» — все, в режиме района — соседние пунктиром */}
+        {otherDistricts && (
+          <GeoJSON
+            key={`districts-${areaKey}-${theme}-${statsKey}`}
+            data={otherDistricts}
+            onEachFeature={onEachDistrict}
+            style={{
+              weight: 1.5,
+              dashArray: areaKey === "city" ? undefined : "6 4",
+              color: accent,
+              fillColor: accent,
+              fillOpacity: 0.04,
+            }}
+          />
+        )}
+
         {boundary && (
           <GeoJSON
             key={`boundary-${areaKey}-${theme}`}
             data={boundary}
             interactive={false}
             style={{ fill: false, weight: 3, color: accent }}
-          />
-        )}
-
-        {/* В режиме «весь город» район остаётся виден пунктиром */}
-        {areaKey === "city" && district && (
-          <GeoJSON
-            key={`district-hint-${theme}`}
-            data={district}
-            interactive={false}
-            style={{ fill: false, weight: 1.5, dashArray: "6 4", color: accent }}
           />
         )}
 
@@ -352,7 +437,7 @@ export default function LeafletMap() {
           </Marker>
         ))}
 
-        {facilities !== null && !hasFacilities && PLACEHOLDER_CAMERAS.map((camera) => {
+        {facilities !== null && !hasFacilities && (areaKey === "city" || areaKey === "alfarabi") && PLACEHOLDER_CAMERAS.map((camera) => {
           const statusInfo = getStatusLabelAndClass(camera.status);
           return (
             <Marker

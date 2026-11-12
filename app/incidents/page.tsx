@@ -62,6 +62,8 @@ export default function IncidentsPage() {
     const sp = new URLSearchParams(window.location.search)
     const s = sp.get("sector")
     if (s) setSector(s as Sector)
+    const dist = sp.get("district")
+    if (dist) setDistrict(dist)
     const st = sp.get("status")
     if (st) setStatus(st)
     const d = sp.get("days")
