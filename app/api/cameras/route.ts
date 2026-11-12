@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const sp = new URL(request.url).searchParams
+    const facilityId = sp.get("facilityId")
     const cameras = await db.camera.findMany({
+      where: facilityId ? { facilityId } : undefined,
+      include: { facility: { select: { id: true, name: true, sector: true, district: true } } },
       orderBy: { createdAt: "desc" },
     })
     return NextResponse.json(cameras)
@@ -18,7 +22,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { name, info, streamUrl } = await request.json()
+    const { name, info, streamUrl, facilityId, latitude, longitude } = await request.json()
 
     if (!name || !info || !streamUrl) {
       return NextResponse.json(
@@ -28,7 +32,14 @@ export async function POST(request: Request) {
     }
 
     const camera = await db.camera.create({
-      data: { name, info, streamUrl },
+      data: {
+        name,
+        info,
+        streamUrl,
+        facilityId: facilityId || null,
+        latitude: latitude != null && latitude !== "" ? Number(latitude) : null,
+        longitude: longitude != null && longitude !== "" ? Number(longitude) : null,
+      },
     })
 
     return NextResponse.json(camera, { status: 201 })

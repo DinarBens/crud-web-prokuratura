@@ -81,7 +81,7 @@ export function LoginForm({
                   <Input
                     id="email"
                     type="email"
-                    placeholder="admin@edtech.kz"
+                    placeholder="user@prokuratura.kz"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -118,9 +118,12 @@ export function LoginForm({
                 {loading ? "Вход..." : "Войти"}
               </Button>
 
-              <div className="text-center text-xs text-muted-foreground border-t border-border/40 pt-4 mt-2">
-                Демо доступ: <span className="font-semibold text-foreground">admin@edtech.kz</span> / <span className="font-semibold text-foreground">admin123</span>
-              </div>
+              {/* Демо-доступ показывается только если явно включён переменной окружения (не для боевого стенда) */}
+              {process.env.NEXT_PUBLIC_DEMO_LOGIN && (
+                <div className="text-center text-xs text-muted-foreground border-t border-border/40 pt-4 mt-2">
+                  Демо доступ: <span className="font-semibold text-foreground">{process.env.NEXT_PUBLIC_DEMO_LOGIN}</span>
+                </div>
+              )}
             </FieldGroup>
           </form>
           <div className="relative hidden bg-muted md:block overflow-hidden border-l border-border/80">

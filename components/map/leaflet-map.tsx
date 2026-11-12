@@ -9,6 +9,39 @@ import "leaflet/dist/leaflet.css";
 import "leaflet-defaulticon-compatibility/dist/leaflet-defaulticon-compatibility.css";
 import "leaflet-defaulticon-compatibility";
 import { PLACEHOLDER_CAMERAS } from "./placeholder-cameras";
+import { SECTORS, SECTOR_META, type Sector } from "@/lib/sectors";
+
+interface MapFacility {
+  id: string;
+  name: string;
+  sector: Sector;
+  district: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  camerasTotal: number;
+  camerasOnline: number;
+  openIncidents: number;
+}
+
+// Маркер объекта: цвет и буква сектора, красное кольцо — есть открытые инциденты
+const facilityIcon = (f: MapFacility) => {
+  const meta = SECTOR_META[f.sector];
+  const alert = f.openIncidents > 0;
+  return L.divIcon({
+    html: `
+      <div class="relative flex items-center justify-center">
+        ${alert ? '<span class="absolute inline-flex h-7 w-7 rounded-full bg-red-500/40 animate-ping"></span>' : ""}
+        <div class="relative flex h-6 w-6 items-center justify-center rounded-full border-2 ${alert ? "border-red-500" : "border-white"} text-[10px] font-bold text-white shadow-md transition-transform duration-200 hover:scale-125" style="background:${meta.color}">
+          ${meta.short}
+        </div>
+      </div>
+    `,
+    className: "custom-div-icon",
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+};
 
 type AreaKey = "district" | "city";
 
@@ -41,7 +74,7 @@ const AREAS: Record<AreaKey, AreaConfig> = {
   },
 };
 
-const AREA_KEYS: AreaKey[] = ["district", "city"];
+const AREA_KEYS: AreaKey[] = ["city", "district"];
 
 // Перелетает к выбранной области и ограничивает перетаскивание её рамкой
 function FitArea({ area }: { area: AreaConfig }) {
@@ -108,8 +141,40 @@ const buildOutsideMask = (district: FeatureCollection): Feature<Polygon> | null 
 
 export default function LeafletMap() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [areaKey, setAreaKey] = useState<AreaKey>("district");
+  const [areaKey, setAreaKey] = useState<AreaKey>("city");
   const [boundaries, setBoundaries] = useState<Partial<Record<AreaKey, FeatureCollection>>>({});
+  const [facilities, setFacilities] = useState<MapFacility[] | null>(null);
+  const [layers, setLayers] = useState<Record<Sector, boolean>>(
+    () => Object.fromEntries(SECTORS.map((s) => [s, true])) as Record<Sector, boolean>
+  );
+  const [onlyAlerts, setOnlyAlerts] = useState(false);
+
+  useEffect(() => {
+    const loadFacilities = () =>
+      fetch("/api/facilities")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((json) => json && setFacilities(json.items))
+        .catch(() => setFacilities([]));
+    loadFacilities();
+    const t = setInterval(loadFacilities, 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const visibleFacilities = useMemo(
+    () => (facilities ?? []).filter((f) => layers[f.sector] && (!onlyAlerts || f.openIncidents > 0)),
+    [facilities, layers, onlyAlerts]
+  );
+  const sectorCounts = useMemo(() => {
+    const c: Partial<Record<Sector, { n: number; alerts: number }>> = {};
+    (facilities ?? []).forEach((f) => {
+      const cur = c[f.sector] ?? { n: 0, alerts: 0 };
+      cur.n++;
+      if (f.openIncidents > 0) cur.alerts++;
+      c[f.sector] = cur;
+    });
+    return c;
+  }, [facilities]);
+  const hasFacilities = (facilities?.length ?? 0) > 0;
 
   useEffect(() => {
     // Determine theme from document class
@@ -174,9 +239,38 @@ export default function LeafletMap() {
         </div>
       </div>
 
+      {/* Слои объектов */}
+      {hasFacilities && (
+        <div className="absolute left-4 bottom-4 z-[1000] flex flex-col gap-1.5 rounded-md border border-border bg-background/90 p-3 shadow-sm backdrop-blur min-w-[210px]">
+          <div className="text-xs font-semibold text-foreground mb-1">Слои объектов</div>
+          {SECTORS.filter((s) => sectorCounts[s]).map((s) => (
+            <label key={s} className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
+              <input
+                type="checkbox"
+                checked={layers[s]}
+                onChange={(e) => setLayers((prev) => ({ ...prev, [s]: e.target.checked }))}
+                className="accent-[var(--primary)]"
+              />
+              <span className="inline-flex size-4 items-center justify-center rounded-full text-[9px] font-bold text-white" style={{ background: SECTOR_META[s].color }}>
+                {SECTOR_META[s].short}
+              </span>
+              <span className="flex-1">{SECTOR_META[s].plural}</span>
+              <span className="font-mono text-[10px] text-muted-foreground">
+                {sectorCounts[s]?.n}
+                {sectorCounts[s]?.alerts ? <span className="text-red-500"> · {sectorCounts[s]?.alerts}!</span> : null}
+              </span>
+            </label>
+          ))}
+          <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer border-t border-border/60 pt-1.5 mt-1">
+            <input type="checkbox" checked={onlyAlerts} onChange={(e) => setOnlyAlerts(e.target.checked)} className="accent-red-500" />
+            Только с открытыми инцидентами
+          </label>
+        </div>
+      )}
+
       <MapContainer
-        bounds={AREAS.district.bounds}
-        maxBounds={AREAS.district.maxBounds}
+        bounds={AREAS.city.bounds}
+        maxBounds={AREAS.city.maxBounds}
         maxBoundsViscosity={1}
         zoomSnap={0.25}
         minZoom={10}
@@ -228,7 +322,37 @@ export default function LeafletMap() {
           />
         )}
 
-        {PLACEHOLDER_CAMERAS.map((camera) => {
+        {visibleFacilities.map((f) => (
+          <Marker key={f.id} position={[f.latitude, f.longitude]} icon={facilityIcon(f)}>
+            <Popup className="custom-premium-popup font-sans">
+              <div className="p-1 min-w-[220px]">
+                <div className="flex items-start justify-between gap-3 mb-1">
+                  <h4 className="font-semibold text-sm text-foreground leading-tight">{f.name}</h4>
+                  <span className="text-[10px] font-medium shrink-0" style={{ color: SECTOR_META[f.sector].color }}>
+                    {SECTOR_META[f.sector].label}
+                  </span>
+                </div>
+                <div className="text-[11px] text-muted-foreground mb-2">{f.district} р-н, {f.address}</div>
+                <div className="space-y-1 text-[11px] border-t pt-2 border-border/60">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Камеры онлайн:</span>
+                    <span className="font-medium text-foreground">{f.camerasOnline}/{f.camerasTotal}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Открытые инциденты:</span>
+                    <span className={`font-medium ${f.openIncidents ? "text-red-600" : "text-foreground"}`}>{f.openIncidents}</span>
+                  </div>
+                </div>
+                <div className="flex gap-3 mt-2 text-[11px]">
+                  <a href={`/objects?sector=${f.sector}&query=${encodeURIComponent(f.name)}`} className="text-primary hover:underline">Камеры объекта</a>
+                  <a href={`/incidents?facilityId=${f.id}&status=all&days=30`} className="text-primary hover:underline">Инциденты</a>
+                </div>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+
+        {facilities !== null && !hasFacilities && PLACEHOLDER_CAMERAS.map((camera) => {
           const statusInfo = getStatusLabelAndClass(camera.status);
           return (
             <Marker

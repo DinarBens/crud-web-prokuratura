@@ -14,53 +14,60 @@ import {
 } from "@/components/ui/sidebar"
 import {
   LuGalleryVerticalEnd,
-  LuAudioLines,
-  LuTerminal,
   LuMap,
   LuMonitor,
   LuVideo,
   LuTv,
+  LuSiren,
+  LuBuilding2,
 } from "react-icons/lu"
 
 // This is sample data.
+// Пользователь подставляется из сессии на сервере в следующей итерации; пока — статично
 const data = {
   user: {
-    name: "Администратор",
-    email: "admin@edtech.kz",
+    name: "Оператор",
+    email: "Прокуратура г. Шымкент",
     avatar: "/avatars/shadcn.jpg",
   },
   teams: [
     {
       name: "Alatau Vision",
       logo: <LuGalleryVerticalEnd />,
-      plan: "Control Center",
-    },
-    {
-      name: "Acme Corp.",
-      logo: <LuAudioLines />,
-      plan: "Startup",
-    },
-    {
-      name: "Evil Corp.",
-      logo: <LuTerminal />,
-      plan: "Free",
+      plan: "Прокуратура г. Шымкент",
     },
   ],
   navMain: [
     {
-      title: "Карта",
+      title: "Карта города",
       url: "/",
       icon: <LuMap />,
+    },
+    {
+      title: "Инциденты",
+      url: "/incidents",
+      icon: <LuSiren />,
       isActive: true,
       items: [
-        {
-          title: "Аналитика",
-          url: "/monitoring/analytics",
-        },
-        {
-          title: "Служебный каталог",
-          url: "#",
-        },
+        { title: "Все открытые", url: "/incidents" },
+        { title: "Школы", url: "/incidents?sector=SCHOOL" },
+        { title: "Детские сады", url: "/incidents?sector=KINDERGARTEN" },
+        { title: "Медицина", url: "/incidents?sector=MEDICAL" },
+        { title: "Камеры ДП", url: "/incidents?sector=POLICE" },
+        { title: "Городские камеры", url: "/incidents?sector=CITY" },
+      ],
+    },
+    {
+      title: "Объекты",
+      url: "/objects",
+      icon: <LuBuilding2 />,
+      items: [
+        { title: "Все объекты", url: "/objects" },
+        { title: "Школы", url: "/objects?sector=SCHOOL" },
+        { title: "Детские сады", url: "/objects?sector=KINDERGARTEN" },
+        { title: "Медицина", url: "/objects?sector=MEDICAL" },
+        { title: "Департамент полиции", url: "/objects?sector=POLICE" },
+        { title: "Городские камеры", url: "/objects?sector=CITY" },
       ],
     },
     {
@@ -68,18 +75,9 @@ const data = {
       url: "#",
       icon: <LuMonitor />,
       items: [
-        {
-          title: "Аналитика",
-          url: "/monitoring/analytics",
-        },
-        {
-          title: "Отчет",
-          url: "/monitoring/reports",
-        },
-        {
-          title: "Тревоги",
-          url: "/monitoring/alarms",
-        },
+        { title: "Аналитика", url: "/monitoring/analytics" },
+        { title: "Отчет", url: "/monitoring/reports" },
+        { title: "Журнал тревог", url: "/monitoring/alarms" },
       ],
     },
     {
