@@ -16,7 +16,7 @@ import {
   formatAgo,
 } from "@/components/shared/filters"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { SEVERITY_META, SLA_MINUTES, STATUS_META, type Sector, type Severity, type IncidentStatus } from "@/lib/sectors"
+import { SEVERITY_META, SLA_MINUTES, STATUS_META, type Sector, type Severity } from "@/lib/sectors"
 import { AlertCircle, AlertTriangle, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -28,6 +28,7 @@ interface Incident {
   severity: string
   status: string
   forwardedTo: string | null
+  isDemo?: boolean
   facility: { id: string; name: string; sector: string; district: string; address: string } | null
 }
 
@@ -106,7 +107,8 @@ export default function IncidentsPage() {
 
   const isOverdue = (i: Incident) => {
     const sev = (i.severity as Severity) || "info"
-    return STATUS_META[i.status as IncidentStatus]?.open && Date.now() - new Date(i.timestamp).getTime() > SLA_MINUTES[sev] * 60000
+    // Реакция просрочена: инцидент так никто и не взял в работу дольше норматива
+    return i.status === "NEW" && Date.now() - new Date(i.timestamp).getTime() > SLA_MINUTES[sev] * 60000
   }
 
   return (
@@ -187,6 +189,7 @@ export default function IncidentsPage() {
                         <div className="flex items-center gap-2">
                           <StatusBadge status={SEVERITY_META[(i.severity as Severity) || "info"].badge} className="text-[9px] uppercase tracking-wider" />
                           <span className="font-medium text-foreground">{i.type}</span>
+                          {i.isDemo && <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1 text-[9px] font-medium text-amber-700 dark:text-amber-300">ДЕМО</span>}
                         </div>
                         <div className="text-[10px] text-muted-foreground mt-1 truncate max-w-[260px]">{i.cameraName}</div>
                       </TableCell>

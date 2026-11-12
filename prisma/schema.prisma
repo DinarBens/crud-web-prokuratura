@@ -47,6 +47,8 @@ model Facility {
   responsiblePhone String?
   // Ведомство-владелец камер (Управление образования, Управление здравоохранения, ДП г. Шымкент, Акимат)
   owner            String?
+  // Демонстрационная запись (имитация) — удаляется одной командой, реальные данные не затрагивает
+  isDemo           Boolean  @default(false)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -71,6 +73,7 @@ model Camera {
   status        String    @default("online")
   lastSeenAt    DateTime? // когда поток последний раз отдавал видео
   lastCheckedAt DateTime? // когда проверяли
+  isDemo        Boolean   @default(false)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   screens    Screen[]
@@ -106,6 +109,7 @@ model AlarmEvent {
   forwardedTo String?
   snapshotUrl String?
   resolvedAt  DateTime?
+  isDemo      Boolean   @default(false)
   actions     IncidentAction[]
 
   @@index([timestamp])
