@@ -16,13 +16,24 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Play, Calendar, Video, Plus } from "lucide-react"
+import { Play, Calendar, Video, Plus, RefreshCw, VideoOff } from "lucide-react"
 
 interface Camera {
   id: string
   name: string
   info: string
   streamUrl: string
+  status?: string
+  lastCheckedAt?: string | null
+}
+
+const RECHECK_AFTER_MS = 10 * 60 * 1000 // перепроверять потоки, если последняя проверка старше 10 минут
+
+function formatAgo(v: string) {
+  const min = Math.round((Date.now() - new Date(v).getTime()) / 60000)
+  if (min < 1) return "только что"
+  if (min < 60) return `${min} мин назад`
+  return `${Math.floor(min / 60)} ч назад`
 }
 
 export default function CamerasPage() {
@@ -42,22 +53,46 @@ export default function CamerasPage() {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addError, setAddError] = useState("")
 
-  const fetchCameras = async () => {
-    setLoading(true)
+  const [checking, setChecking] = useState(false)
+  const [showOffline, setShowOffline] = useState(true)
+  // Фактический результат воспроизведения в браузере (дополняет серверную проверку)
+  const [liveInBrowser, setLiveInBrowser] = useState<Record<string, boolean>>({})
+
+  const fetchCameras = async (quiet = false): Promise<Camera[]> => {
+    if (!quiet) setLoading(true)
     try {
       const res = await fetch("/api/cameras")
       if (!res.ok) throw new Error("Ошибка получения камер")
-      const data = await res.json()
+      const data: Camera[] = await res.json()
       setCameras(data)
+      return data
     } catch (err) {
       console.error(err)
+      return []
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
+    }
+  }
+
+  // Проверка потоков на сервере: какие камеры реально отдают видео
+  const checkStreams = async () => {
+    setChecking(true)
+    try {
+      await fetch("/api/cameras/health", { method: "POST" })
+      setLiveInBrowser({})
+      await fetchCameras(true)
+    } finally {
+      setChecking(false)
     }
   }
 
   useEffect(() => {
-    fetchCameras()
+    fetchCameras().then((data) => {
+      const checkedTimes = data.map((c) => (c.lastCheckedAt ? new Date(c.lastCheckedAt).getTime() : 0))
+      const oldest = checkedTimes.length ? Math.min(...checkedTimes) : 0
+      if (data.length && Date.now() - oldest > RECHECK_AFTER_MS) checkStreams()
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleAddCamera = async (e: React.FormEvent) => {
@@ -98,10 +133,21 @@ export default function CamerasPage() {
     }
   }
 
-  const filteredCameras = cameras.filter((cam) =>
-    cam.name.toLowerCase().includes(search.toLowerCase()) ||
-    cam.info.toLowerCase().includes(search.toLowerCase())
+  const isOnline = (cam: Camera) => liveInBrowser[cam.id] ?? cam.status !== "offline"
+  const onlineCount = cameras.filter(isOnline).length
+  const lastChecked = cameras.reduce<string | null>(
+    (acc, c) => (c.lastCheckedAt && (!acc || c.lastCheckedAt > acc) ? c.lastCheckedAt : acc),
+    null
   )
+
+  // Рабочие камеры — наверху. Порядок берём от серверной проверки, чтобы карточки не прыгали во время просмотра.
+  const filteredCameras = cameras
+    .filter((cam) =>
+      cam.name.toLowerCase().includes(search.toLowerCase()) ||
+      cam.info.toLowerCase().includes(search.toLowerCase())
+    )
+    .filter((cam) => showOffline || isOnline(cam))
+    .sort((a, b) => Number(b.status !== "offline") - Number(a.status !== "offline"))
 
   return (
     <DashboardLayout
@@ -203,6 +249,34 @@ export default function CamerasPage() {
           <ViewToggle mode={viewMode} onChange={setViewMode} />
         </div>
 
+        {/* Сводка по доступности камер */}
+        {cameras.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="inline-flex items-center gap-1.5 text-foreground">
+                <span className="size-2 rounded-full bg-emerald-500" />
+                Отдают видео: <b>{onlineCount}</b> из {cameras.length}
+              </span>
+              <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                <span className="size-2 rounded-full bg-zinc-400" />
+                Нет сигнала: {cameras.length - onlineCount}
+              </span>
+              <span className="text-muted-foreground">
+                {checking ? "Проверяем потоки…" : lastChecked ? `Проверено ${formatAgo(lastChecked)}` : "Ещё не проверялись"}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="inline-flex items-center gap-1.5 text-foreground cursor-pointer">
+                <input type="checkbox" checked={showOffline} onChange={(e) => setShowOffline(e.target.checked)} className="accent-[var(--primary)]" />
+                Показывать камеры без сигнала
+              </label>
+              <Button variant="outline" size="sm" onClick={checkStreams} disabled={checking} className="h-8 gap-1.5 text-xs cursor-pointer">
+                <RefreshCw className={`size-3.5 ${checking ? "animate-spin" : ""}`} /> Проверить камеры
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Cameras Display */}
         {loading ? (
           <div className="p-12 text-center text-muted-foreground">Загрузка видеоисточников...</div>
@@ -219,6 +293,7 @@ export default function CamerasPage() {
             <Table>
               <TableHeader className="bg-secondary/25 border-b border-border">
                 <TableRow className="hover:bg-transparent border-b border-border/80">
+                  <TableHead className="w-[120px] text-xs font-semibold text-muted-foreground uppercase tracking-wider">Статус</TableHead>
                   <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Имя камеры</TableHead>
                   <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Информация</TableHead>
                   <TableHead className="w-[240px] text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Действия</TableHead>
@@ -227,6 +302,13 @@ export default function CamerasPage() {
               <TableBody>
                 {filteredCameras.map((cam) => (
                   <TableRow key={cam.id} className="hover:bg-secondary/15 border-b border-border/40">
+                    <TableCell className="text-xs">
+                      {isOnline(cam) ? (
+                        <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400"><span className="size-1.5 rounded-full bg-emerald-500" />Есть видео</span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 text-muted-foreground"><span className="size-1.5 rounded-full bg-zinc-400" />Нет сигнала</span>
+                      )}
+                    </TableCell>
                     <TableCell className="font-medium text-foreground text-xs">{cam.name}</TableCell>
                     <TableCell className="text-muted-foreground text-xs">{cam.info}</TableCell>
                     <TableCell className="text-right flex items-center justify-end gap-2 h-[52px]">
@@ -256,8 +338,23 @@ export default function CamerasPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredCameras.map((cam) => (
-              <div key={cam.id} className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col">
-                <StreamViewer streamUrl={cam.streamUrl} cameraName={cam.name} />
+              <div key={cam.id} className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col ${isOnline(cam) ? "" : "opacity-70"}`}>
+                {cam.status !== "offline" ? (
+                  <StreamViewer
+                    streamUrl={cam.streamUrl}
+                    cameraName={cam.name}
+                    onStatus={(alive) => setLiveInBrowser((prev) => (prev[cam.id] === alive ? prev : { ...prev, [cam.id]: alive }))}
+                  />
+                ) : (
+                  // Камеры без сигнала не грузим в сетке — чтобы не тормозить страницу. Открыть можно кнопкой «Посмотреть».
+                  <div className="relative aspect-video w-full bg-zinc-950 border-b border-border/80 flex flex-col items-center justify-center gap-1.5 text-zinc-400">
+                    <VideoOff className="size-6" />
+                    <span className="text-xs font-medium">Нет сигнала</span>
+                    <span className="text-[10px] text-zinc-500">
+                      {cam.lastCheckedAt ? `проверено ${formatAgo(cam.lastCheckedAt)}` : "поток не отвечает"}
+                    </span>
+                  </div>
+                )}
                 <div className="p-4 flex flex-col gap-3 flex-1 justify-between">
                   <div className="flex flex-col gap-1">
                     <h4 className="text-xs font-bold text-foreground">{cam.name}</h4>

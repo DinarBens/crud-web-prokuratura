@@ -10,6 +10,10 @@ export async function GET(request: Request) {
       include: { facility: { select: { id: true, name: true, sector: true, district: true } } },
       orderBy: { createdAt: "desc" },
     })
+    // Рабочие камеры — первыми, дальше по имени
+    cameras.sort((a, b) =>
+      a.status === b.status ? a.name.localeCompare(b.name, "ru", { numeric: true }) : a.status === "online" ? -1 : 1
+    )
     return NextResponse.json(cameras)
   } catch (error) {
     console.error("GET cameras error:", error)

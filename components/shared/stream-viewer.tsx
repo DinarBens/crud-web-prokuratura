@@ -9,6 +9,8 @@ interface StreamViewerProps {
   cameraName: string
   isActive?: boolean
   className?: string
+  // Сообщает, удалось ли получить видео (true — пошли кадры, false — поток недоступен)
+  onStatus?: (alive: boolean) => void
 }
 
 export function StreamViewer({
@@ -16,6 +18,7 @@ export function StreamViewer({
   cameraName,
   isActive = true,
   className = "",
+  onStatus,
 }: StreamViewerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [isPlaying, setIsPlaying] = useState(true)
@@ -23,6 +26,10 @@ export function StreamViewer({
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [fps, setFps] = useState(25)
   const [bitrate, setBitrate] = useState(1840)
+  const [failed, setFailed] = useState(false)
+  const [playing, setPlaying] = useState(false)
+  const onStatusRef = useRef(onStatus)
+  onStatusRef.current = onStatus
 
   // Simulate changing network bitrate/fps to look premium and authentic
   useEffect(() => {
@@ -40,6 +47,20 @@ export function StreamViewer({
     if (!video || !streamUrl) return
 
     let hls: Hls | null = null
+    let retries = 0
+    setFailed(false)
+    setPlaying(false)
+    const fail = () => {
+      setFailed(true)
+      onStatusRef.current?.(false)
+    }
+    const onPlaying = () => {
+      setPlaying(true)
+      setFailed(false)
+      onStatusRef.current?.(true)
+    }
+    video.addEventListener("playing", onPlaying)
+    video.addEventListener("error", fail)
 
     if (streamUrl.includes(".m3u8")) {
       if (Hls.isSupported()) {
@@ -55,18 +76,19 @@ export function StreamViewer({
           }
         })
         hls.on(Hls.Events.ERROR, (_event, data) => {
-          if (data.fatal) {
-            switch (data.type) {
-              case Hls.ErrorTypes.NETWORK_ERROR:
-                hls?.startLoad()
-                break
-              case Hls.ErrorTypes.MEDIA_ERROR:
-                hls?.recoverMediaError()
-                break
-              default:
-                break
-            }
+          if (!data.fatal) return
+          // Плейлист не найден (404) или несколько неудачных попыток — камера не отдаёт видео
+          const code = data.response?.code
+          if (retries >= 2 || code === 404 || code === 403) {
+            hls?.destroy()
+            hls = null
+            fail()
+            return
           }
+          retries++
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls?.startLoad()
+          else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls?.recoverMediaError()
+          else fail()
         })
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = streamUrl
@@ -82,6 +104,8 @@ export function StreamViewer({
     }
 
     return () => {
+      video.removeEventListener("playing", onPlaying)
+      video.removeEventListener("error", fail)
       if (hls) {
         hls.destroy()
       }
@@ -136,6 +160,13 @@ export function StreamViewer({
         style={{ filter: "brightness(0.9) contrast(1.05)" }}
       />
 
+      {failed && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-center text-zinc-400 z-[5]">
+          <span className="text-xs font-medium">Камера не отдаёт видео</span>
+          <span className="text-[10px] text-zinc-500">Поток недоступен на сервере</span>
+        </div>
+      )}
+
       {/* Video Overlay - Camera details */}
       <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none z-10">
         <div className="flex flex-col gap-0.5">
@@ -143,18 +174,18 @@ export function StreamViewer({
             {cameraName}
           </span>
           <span className="text-[10px] text-zinc-300 font-mono bg-black/40 px-1.5 py-0.5 rounded w-fit backdrop-blur-sm">
-            FPS: {fps} | Bitrate: {bitrate} kb/s
+            {playing ? `FPS: ${fps} | Bitrate: ${bitrate} kb/s` : "—"}
           </span>
         </div>
         
-        {isActive ? (
+        {isActive && !failed && playing ? (
           <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500 text-white animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.5)]">
             <span className="size-1.5 rounded-full bg-white"></span>
             LIVE
           </span>
         ) : (
           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-700 text-zinc-300">
-            OFFLINE
+            {failed || !isActive ? "НЕТ СИГНАЛА" : "ПОДКЛЮЧЕНИЕ…"}
           </span>
         )}
       </div>
