@@ -1,57 +1,27 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
-import { Prisma } from "@prisma/client"
+import { getSession } from "@/lib/session"
+import { incidentWhere } from "@/lib/scope"
 
+// Журнал тревог (совместим со старыми страницами: query, type, date) + новые фильтры sector, district, status
 export async function GET(request: Request) {
   try {
+    const session = await getSession(request)
     const { searchParams } = new URL(request.url)
-    const query = searchParams.get("query") || ""
-    const type = searchParams.get("type") || ""
-    const dateStr = searchParams.get("date") || ""
-
-    const where: Prisma.AlarmEventWhereInput = {}
-
-    // 1. Text search filter
-    if (query) {
-      where.OR = [
-        { cameraName: { contains: query, mode: "insensitive" } },
-        { details: { contains: query, mode: "insensitive" } },
-      ]
-    }
-
-    // 2. Type filter
-    if (type && type !== "all") {
-      where.type = type
-    }
-
-    // 3. Date filter
-    if (dateStr) {
-      const selectedDate = new Date(dateStr)
-      if (!isNaN(selectedDate.getTime())) {
-        const startOfDay = new Date(selectedDate)
-        startOfDay.setHours(0, 0, 0, 0)
-        
-        const endOfDay = new Date(selectedDate)
-        endOfDay.setHours(23, 59, 59, 999)
-
-        where.timestamp = {
-          gte: startOfDay,
-          lte: endOfDay,
-        }
-      }
+    if (!searchParams.get("days") && !searchParams.get("date") && !searchParams.get("from")) {
+      searchParams.set("days", "30")
     }
 
     const events = await db.alarmEvent.findMany({
-      where,
+      where: incidentWhere(session, searchParams),
+      include: { facility: { select: { id: true, name: true, sector: true, district: true } } },
       orderBy: { timestamp: "desc" },
+      take: 1000,
     })
 
     return NextResponse.json(events)
   } catch (error) {
     console.error("GET alarms error:", error)
-    return NextResponse.json(
-      { error: "Не удалось получить список тревог" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "Не удалось получить список тревог" }, { status: 500 })
   }
 }

@@ -23,19 +23,59 @@ model MapPoint {
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
+  // Хэш вида "scrypt$<salt>$<hash>" (старые записи с открытым паролем принимаются и перехэшируются при входе)
   password  String
   name      String?
+  // ADMIN | PROSECUTOR | POLICE | EDUCATION | HEALTH — см. lib/roles.ts
+  role      String   @default("ADMIN")
   createdAt DateTime @default(now())
+
+  incidentActions IncidentAction[]
+}
+
+// Единый реестр объектов: школы, детские сады, медицина, подразделения полиции, городские камеры
+model Facility {
+  id               String   @id @default(uuid())
+  name             String   @unique
+  // SCHOOL | KINDERGARTEN | MEDICAL | POLICE | CITY — см. lib/sectors.ts
+  sector           String
+  district         String   // район г. Шымкент
+  address          String
+  latitude         Float
+  longitude        Float
+  responsibleName  String?
+  responsiblePhone String?
+  // Ведомство-владелец камер (Управление образования, Управление здравоохранения, ДП г. Шымкент, Акимат)
+  owner            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  cameras   Camera[]
+  incidents AlarmEvent[]
+
+  @@index([sector])
+  @@index([district])
 }
 
 model Camera {
-  id        String   @id @default(uuid())
-  name      String   @unique
-  info      String
-  streamUrl String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  screens   Screen[]
+  id         String    @id @default(uuid())
+  name       String    @unique
+  info       String
+  streamUrl  String
+  // Привязка к объекту (может отсутствовать для камер, импортированных без адреса)
+  facilityId String?
+  facility   Facility? @relation(fields: [facilityId], references: [id], onDelete: SetNull)
+  latitude   Float?
+  longitude  Float?
+  // online | offline | degraded
+  status     String    @default("online")
+  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  screens    Screen[]
+  incidents  AlarmEvent[]
+
+  @@index([facilityId])
 }
 
 model Screen {
@@ -46,12 +86,46 @@ model Screen {
   updatedAt DateTime @updatedAt
 }
 
+// Событие видеоаналитики = инцидент. Поля статуса нужны для прокурорского надзора за реагированием.
 model AlarmEvent {
-  id         String   @id @default(uuid())
-  type       String   // e.g., "Бегущий человек", "Вандализм"
-  cameraName String
-  timestamp  DateTime
-  details    String
+  id          String    @id @default(uuid())
+  type        String    // e.g., "Бегущий человек", "Вандализм"
+  cameraName  String
+  timestamp   DateTime
+  details     String
+  cameraId    String?
+  camera      Camera?   @relation(fields: [cameraId], references: [id], onDelete: SetNull)
+  facilityId  String?
+  facility    Facility? @relation(fields: [facilityId], references: [id], onDelete: SetNull)
+  // critical | warning | info — вычисляется по типу при создании (lib/sectors.ts)
+  severity    String    @default("info")
+  // NEW | IN_REVIEW | FORWARDED | RESOLVED | FALSE_ALARM
+  status      String    @default("NEW")
+  // Кому передано (ДП, УП района, Управление образования и т.д.)
+  forwardedTo String?
+  snapshotUrl String?
+  resolvedAt  DateTime?
+  actions     IncidentAction[]
+
+  @@index([timestamp])
+  @@index([status])
+  @@index([facilityId])
+}
+
+// Журнал действий по инциденту — кто, когда и что сделал (для проверки законности и сроков реагирования)
+model IncidentAction {
+  id         String     @id @default(uuid())
+  incidentId String
+  incident   AlarmEvent @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String     // STATUS_CHANGE | COMMENT | FORWARD
+  fromStatus String?
+  toStatus   String?
+  comment    String?
+  createdAt  DateTime   @default(now())
+
+  @@index([incidentId])
 }
 
 model FeedingEvent {

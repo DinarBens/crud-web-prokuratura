@@ -34,3 +34,21 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+---
+
+## Alatau Vision — платформа для прокуратуры г. Шымкент
+
+### Что добавлено
+- **Единый реестр объектов** (`/objects`): школы, детские сады, медицина, подразделения ДП, городские камеры; камеры онлайн/всего, открытые инциденты, ответственные.
+- **Инциденты** (`/incidents`): единый журнал по всем секторам, статусы (Новый → На проверке → Передан → Отработан / Ложное срабатывание), передача в УП района / ДП / управления, журнал действий, контроль нормативов реакции (критичные — 15 мин), автообновление 30 с.
+- **Аналитика** (`/monitoring/analytics`): KPI, динамика по дням, сектора, районы, тепловая карта «день недели × час», частые типы, проблемные объекты, доступность камер.
+- **Карта**: весь город, слои по секторам, подсветка объектов с открытыми инцидентами.
+- **Роли**: ADMIN, PROSECUTOR, POLICE, EDUCATION (школы+сады), HEALTH (медицина) — доступ к данным фильтруется на сервере.
+- **Безопасность**: подписанная сессия (HMAC), хэширование паролей (scrypt), API отвечает 401 без сессии, демо-логин скрыт на странице входа.
+
+### Деплой (Railway)
+1. Переменные: `SESSION_SECRET` (длинная случайная строка), опционально `DEMO_PASSWORD`, `NEXT_PUBLIC_DEMO_LOGIN`, `CAMERAS_JSON_PATH`.
+2. Схема БД: `npx prisma db push` (добавляет таблицы `Facility`, `IncidentAction` и новые поля).
+3. Демо-данные: `npx prisma db seed` — **удаляет** текущие камеры/экраны/события и создаёт 76 объектов, ~340 камер, ~600 инцидентов за 30 дней.
+   Демо-пользователи: admin@edtech.kz, prokuratura@demo.kz, police@demo.kz, education@demo.kz, health@demo.kz (пароль — `DEMO_PASSWORD`, по умолчанию admin123).

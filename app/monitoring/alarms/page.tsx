@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { AlertCircle } from "lucide-react"
+import { SEVERITY_META, severityOf } from "@/lib/sectors"
 
 interface AlarmEvent {
   id: string
@@ -58,14 +59,7 @@ export default function AlarmsPage() {
   }
 
   // Get severity badge status based on event type
-  const getEventStatus = (type: string) => {
-    const criticalTypes = ["Драка", "Огонь", "Оружие", "ДТП", "Вандализм", "Упавший человек"]
-    const warningTypes = ["Курение", "Нарушитель", "Пересечение линии", "Длительное нахождение в зоне"]
-    
-    if (criticalTypes.includes(type)) return "critical"
-    if (warningTypes.includes(type)) return "warning"
-    return "stable"
-  }
+  const getEventStatus = (type: string) => SEVERITY_META[severityOf(type)].badge
 
   return (
     <DashboardLayout
