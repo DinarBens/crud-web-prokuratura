@@ -8,11 +8,13 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
-    "start": "next start",
-    "lint": "eslint"
+    "start": "prisma db push --skip-generate && next start",
+    "lint": "eslint",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
+    "@prisma/client": "^6.19.3",
     "@types/leaflet": "^1.9.21",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -23,6 +25,7 @@
     "leaflet-defaulticon-compatibility": "^0.1.2",
     "lucide-react": "^1.21.0",
     "next": "^15.5.19",
+    "prisma": "^6.19.3",
     "react": "19.1.0",
     "react-day-picker": "^10.0.1",
     "react-dom": "19.1.0",
@@ -34,14 +37,12 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
-    "@prisma/client": "^6.19.3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.5.14",
-    "prisma": "^6.19.3",
     "tailwindcss": "^4",
     "tsx": "^4.22.4",
     "typescript": "^5"
