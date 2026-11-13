@@ -80,7 +80,7 @@ export default function CamerasPage() {
   // Проверка потоков из браузера оператора: какие камеры реально отдают видео тому, кто смотрит.
   // Сервер видео отвечает медленно и держит мало соединений, поэтому:
   //  - одновременно не больше 4 запросов (браузер держит к одному сайту ~6 соединений, остальные ждут в очереди);
-  //  - первый проход с коротким таймаутом, затем повтор только для не ответивших — с длинным;
+  //  - первый проход с таймаутом 6 с (запуск потока на сервере видео занимает до ~9 с), затем повтор не ответивших — 15 с;
   //  - рабочие камеры сохраняются сразу после первого прохода, чтобы они быстрее поднялись наверх.
   const checkStreams = async (list?: Camera[]) => {
     const items = (list ?? cameras).filter((c) => c.streamUrl)
@@ -108,13 +108,13 @@ export default function CamerasPage() {
       })
     }
     try {
-      await run(items, 4000)
+      await run(items, 6000)
       // Сразу сохраняем то, что уже ясно (рабочие и явно нерабочие), и обновляем список
       await save([...result.entries()].filter(([, r]) => r !== "timeout"))
       await fetchCameras(true)
       const slow = items.filter((c) => result.get(c.id) === "timeout")
       if (slow.length) {
-        await run(slow, 10000)
+        await run(slow, 15000)
         await save(slow.map((c) => [c.id, result.get(c.id) ?? "timeout"]))
       }
       setLiveInBrowser({})
