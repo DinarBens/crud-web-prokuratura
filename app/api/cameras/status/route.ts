@@ -19,8 +19,8 @@ export async function POST(request: Request) {
     const onlineIds = results.filter((r) => r.alive).map((r) => r.id)
     const offlineIds = results.filter((r) => !r.alive).map((r) => r.id)
 
-    // Если не ответила ни одна камера — вероятнее проблема со связью у оператора; статусы не трогаем
-    if (onlineIds.length === 0) {
+    // Большая порция, где не ответила ни одна камера, — вероятнее проблема со связью у оператора; статусы не трогаем
+    if (onlineIds.length === 0 && results.length >= 100) {
       return NextResponse.json(
         { skipped: true, error: "Ни одна камера не ответила — проверьте интернет, статусы не изменены" },
         { status: 409 }

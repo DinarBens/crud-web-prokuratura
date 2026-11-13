@@ -17,7 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Play, Calendar, Video, Plus, RefreshCw, VideoOff } from "lucide-react"
-import { isStreamAlive } from "@/lib/stream-health"
+import { checkStream, type StreamCheck } from "@/lib/stream-health"
 
 interface Camera {
   id: string
@@ -78,29 +78,45 @@ export default function CamerasPage() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
 
   // Проверка потоков из браузера оператора: какие камеры реально отдают видео тому, кто смотрит.
-  // Результат сохраняется на сервере, чтобы сортировка и статусы были у всех пользователей.
+  // Сервер видео отвечает медленно и держит мало соединений, поэтому:
+  //  - одновременно не больше 4 запросов (браузер держит к одному сайту ~6 соединений, остальные ждут в очереди);
+  //  - первый проход с коротким таймаутом, затем повтор только для не ответивших — с длинным;
+  //  - рабочие камеры сохраняются сразу после первого прохода, чтобы они быстрее поднялись наверх.
   const checkStreams = async (list?: Camera[]) => {
     const items = (list ?? cameras).filter((c) => c.streamUrl)
     if (!items.length) return
     setChecking(true)
     setProgress({ done: 0, total: items.length })
-    try {
-      const results: { id: string; alive: boolean }[] = []
+    const result = new Map<string, StreamCheck>()
+    const run = async (batch: Camera[], timeoutMs: number) => {
       let next = 0
       const worker = async () => {
-        while (next < items.length) {
-          const cam = items[next++]
-          const alive = await isStreamAlive(cam.streamUrl)
-          results.push({ id: cam.id, alive })
-          setProgress({ done: results.length, total: items.length })
+        while (next < batch.length) {
+          const cam = batch[next++]
+          result.set(cam.id, await checkStream(cam.streamUrl, timeoutMs))
+          setProgress({ done: result.size, total: items.length })
         }
       }
-      await Promise.all(Array.from({ length: Math.min(12, items.length) }, worker))
+      await Promise.all(Array.from({ length: Math.min(4, batch.length) }, worker))
+    }
+    const save = async (entries: [string, StreamCheck][]) => {
+      if (!entries.length) return
       await fetch("/api/cameras/status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ results }),
+        body: JSON.stringify({ results: entries.map(([id, r]) => ({ id, alive: r === "ok" })) }),
       })
+    }
+    try {
+      await run(items, 4000)
+      // Сразу сохраняем то, что уже ясно (рабочие и явно нерабочие), и обновляем список
+      await save([...result.entries()].filter(([, r]) => r !== "timeout"))
+      await fetchCameras(true)
+      const slow = items.filter((c) => result.get(c.id) === "timeout")
+      if (slow.length) {
+        await run(slow, 10000)
+        await save(slow.map((c) => [c.id, result.get(c.id) ?? "timeout"]))
+      }
       setLiveInBrowser({})
       await fetchCameras(true)
     } finally {

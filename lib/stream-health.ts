@@ -7,17 +7,34 @@
 
 const TIMEOUT_MS = 6000
 
-async function fetchText(url: string): Promise<{ ok: boolean; text: string }> {
+// "ok" — видео идёт, "dead" — сервер ответил, но потока нет (404 и т.п.), "timeout" — не дождались ответа
+export type StreamCheck = "ok" | "dead" | "timeout"
+
+async function fetchText(url: string, timeoutMs = TIMEOUT_MS): Promise<{ ok: boolean; status: number; text: string }> {
   const ctl = new AbortController()
-  const t = setTimeout(() => ctl.abort(), TIMEOUT_MS)
+  const t = setTimeout(() => ctl.abort(), timeoutMs)
   try {
     const r = await fetch(url, { signal: ctl.signal, cache: "no-store" })
-    return { ok: r.ok, text: r.ok ? await r.text() : "" }
+    return { ok: r.ok, status: r.status, text: r.ok ? await r.text() : "" }
   } catch {
-    return { ok: false, text: "" }
+    return { ok: false, status: 0, text: "" }
   } finally {
     clearTimeout(t)
   }
+}
+
+// Подробная проверка с явным таймаутом — для проверки из браузера порциями (см. страницу камер)
+export async function checkStream(url: string, timeoutMs: number): Promise<StreamCheck> {
+  if (!/^https?:\/\//i.test(url)) return "dead"
+  const r = await fetchText(url, timeoutMs)
+  if (r.status === 0) return "timeout"
+  if (!r.ok) return "dead"
+  if (!url.includes(".m3u8") || r.text.includes("#EXTINF")) return "ok"
+  const variant = r.text.split("\n").map((l) => l.trim()).find((l) => l && !l.startsWith("#"))
+  if (!variant || !r.text.includes("#EXT-X-STREAM-INF")) return "dead"
+  const child = await fetchText(new URL(variant, url).toString(), timeoutMs)
+  if (child.status === 0) return "timeout"
+  return child.ok && child.text.includes("#EXTINF") ? "ok" : "dead"
 }
 
 export async function isStreamAlive(url: string): Promise<boolean> {
