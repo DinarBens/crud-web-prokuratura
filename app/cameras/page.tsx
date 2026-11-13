@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Play, Calendar, Video, Plus, RefreshCw, VideoOff } from "lucide-react"
+import { isStreamAlive } from "@/lib/stream-health"
 
 interface Camera {
   id: string
@@ -74,15 +75,37 @@ export default function CamerasPage() {
     }
   }
 
-  // Проверка потоков на сервере: какие камеры реально отдают видео
-  const checkStreams = async () => {
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+
+  // Проверка потоков из браузера оператора: какие камеры реально отдают видео тому, кто смотрит.
+  // Результат сохраняется на сервере, чтобы сортировка и статусы были у всех пользователей.
+  const checkStreams = async (list?: Camera[]) => {
+    const items = (list ?? cameras).filter((c) => c.streamUrl)
+    if (!items.length) return
     setChecking(true)
+    setProgress({ done: 0, total: items.length })
     try {
-      await fetch("/api/cameras/health", { method: "POST" })
+      const results: { id: string; alive: boolean }[] = []
+      let next = 0
+      const worker = async () => {
+        while (next < items.length) {
+          const cam = items[next++]
+          const alive = await isStreamAlive(cam.streamUrl)
+          results.push({ id: cam.id, alive })
+          setProgress({ done: results.length, total: items.length })
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(12, items.length) }, worker))
+      await fetch("/api/cameras/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ results }),
+      })
       setLiveInBrowser({})
       await fetchCameras(true)
     } finally {
       setChecking(false)
+      setProgress(null)
     }
   }
 
@@ -90,7 +113,7 @@ export default function CamerasPage() {
     fetchCameras().then((data) => {
       const checkedTimes = data.map((c) => (c.lastCheckedAt ? new Date(c.lastCheckedAt).getTime() : 0))
       const oldest = checkedTimes.length ? Math.min(...checkedTimes) : 0
-      if (data.length && Date.now() - oldest > RECHECK_AFTER_MS) checkStreams()
+      if (data.length && Date.now() - oldest > RECHECK_AFTER_MS) checkStreams(data)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -262,7 +285,7 @@ export default function CamerasPage() {
                 Нет сигнала: {cameras.length - onlineCount}
               </span>
               <span className="text-muted-foreground">
-                {checking ? "Проверяем потоки…" : lastChecked ? `Проверено ${formatAgo(lastChecked)}` : "Ещё не проверялись"}
+                {checking ? `Проверяем потоки… ${progress ? `${progress.done} из ${progress.total}` : ""}` : lastChecked ? `Проверено ${formatAgo(lastChecked)}` : "Ещё не проверялись"}
               </span>
             </div>
             <div className="flex items-center gap-3">
@@ -270,7 +293,7 @@ export default function CamerasPage() {
                 <input type="checkbox" checked={showOffline} onChange={(e) => setShowOffline(e.target.checked)} className="accent-[var(--primary)]" />
                 Показывать камеры без сигнала
               </label>
-              <Button variant="outline" size="sm" onClick={checkStreams} disabled={checking} className="h-8 gap-1.5 text-xs cursor-pointer">
+              <Button variant="outline" size="sm" onClick={() => checkStreams()} disabled={checking} className="h-8 gap-1.5 text-xs cursor-pointer">
                 <RefreshCw className={`size-3.5 ${checking ? "animate-spin" : ""}`} /> Проверить камеры
               </Button>
             </div>
