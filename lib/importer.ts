@@ -322,6 +322,7 @@ export function startImport(opts: { media: boolean }) {
   running = (async () => {
     try {
       importState.counts = await importRows()
+      console.log("[import] записи загружены:", JSON.stringify(importState.counts), importState.errors.length ? `предупреждения: ${importState.errors.join(" | ")}` : "")
       if (opts.media) {
         importState.phase = "media"
         importState.message = "Копируем видео и кадры…"
@@ -329,9 +330,11 @@ export function startImport(opts: { media: boolean }) {
       }
       importState.phase = "done"
       importState.message = "Импорт завершён"
+      console.log("[import] завершён; медиа:", JSON.stringify(importState.media))
     } catch (e) {
       importState.phase = "error"
       importState.message = e instanceof Error ? e.message : String(e)
+      console.error("[import] ошибка:", importState.message)
     } finally {
       importState.finishedAt = new Date().toISOString()
       running = null
