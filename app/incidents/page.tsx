@@ -1,6 +1,7 @@
 "use client"
 
-import React, { useCallback, useEffect, useState } from "react"
+import React, { Suspense, useCallback, useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { IncidentDialog } from "@/components/incident-dialog"
 import { StatusBadge } from "@/components/shared/status-badge"
@@ -10,7 +11,8 @@ import {
   SectorLabel,
   IncidentStatusBadge,
   NativeSelect,
-  DISTRICT_OPTIONS,
+  CitySelect,
+  SOURCE_OPTIONS,
   PERIOD_OPTIONS,
   formatDateTime,
   formatAgo,
@@ -29,7 +31,9 @@ interface Incident {
   status: string
   forwardedTo: string | null
   isDemo?: boolean
-  facility: { id: string; name: string; sector: string; district: string; address: string } | null
+  source?: string
+  title?: string | null
+  facility: { id: string; name: string; sector: string; district: string; city?: string; region?: string; address: string } | null
 }
 
 const STATUS_OPTIONS = [
@@ -46,11 +50,20 @@ const SEVERITY_OPTIONS = [
 ]
 
 export default function IncidentsPage() {
+  return (
+    <Suspense>
+      <IncidentsView />
+    </Suspense>
+  )
+}
+
+function IncidentsView() {
   const [sector, setSector] = useState<Sector | "all">("all")
-  const [district, setDistrict] = useState("all")
+  const [city, setCity] = useState("all")
+  const [source, setSource] = useState("all")
   const [status, setStatus] = useState("open")
   const [severity, setSeverity] = useState("all")
-  const [days, setDays] = useState("7")
+  const [days, setDays] = useState("0")
   const [query, setQuery] = useState("")
   const [items, setItems] = useState<Incident[]>([])
   const [total, setTotal] = useState(0)
@@ -58,25 +71,24 @@ export default function IncidentsPage() {
   const [selected, setSelected] = useState<string | null>(null)
   const [facility, setFacility] = useState<{ id: string; name: string } | null>(null)
 
-  // Начальный сектор из ?sector= (переход с карты/реестра)
+  // Фильтры из адреса (?sector=&city=&source=&status=&severity=&days=&facilityId=) — переход из меню, обзора, реестра
+  const searchParams = useSearchParams()
   useEffect(() => {
-    const sp = new URLSearchParams(window.location.search)
-    const s = sp.get("sector")
-    if (s) setSector(s as Sector)
-    const dist = sp.get("district")
-    if (dist) setDistrict(dist)
-    const st = sp.get("status")
-    if (st) setStatus(st)
-    const d = sp.get("days")
-    if (d) setDays(d)
+    const sp = searchParams ?? new URLSearchParams()
+    setSector((sp.get("sector") as Sector) || "all")
+    setCity(sp.get("city") || "all")
+    setSource(sp.get("source") || "all")
+    setStatus(sp.get("status") || "open")
+    setSeverity(sp.get("severity") || "all")
+    setDays(sp.get("days") || "0")
     const fid = sp.get("facilityId")
-    if (fid) setFacility({ id: fid, name: "" })
-  }, [])
+    setFacility(fid ? { id: fid, name: "" } : null)
+  }, [searchParams])
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const p = new URLSearchParams({ sector, district, status, severity, days, limit: "300" })
+      const p = new URLSearchParams({ sector, city, source, status, severity, days, limit: "300" })
       if (query) p.set("query", query)
       if (facility) p.set("facilityId", facility.id)
       const r = await fetch(`/api/incidents?${p}`)
@@ -92,7 +104,7 @@ export default function IncidentsPage() {
     } finally {
       setLoading(false)
     }
-  }, [sector, district, status, severity, days, query, facility])
+  }, [sector, city, source, status, severity, days, query, facility])
 
   useEffect(() => {
     const t = setTimeout(load, query ? 300 : 0)
@@ -116,9 +128,11 @@ export default function IncidentsPage() {
       <div className="p-6 flex flex-col gap-5 max-w-7xl mx-auto w-full">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
           <div className="flex flex-col gap-1.5">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">Инциденты по камерам города</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
+              {source === "live" && status === "NEW" ? "Неразобранные события" : "Инциденты"}
+            </h1>
             <p className="text-sm text-muted-foreground">
-              Единый журнал: школы, детские сады, медицина, камеры ДП и городские камеры. Контроль сроков и полноты реагирования.
+              Видеожурнал и события живого мониторинга по всем объектам. Отметьте реакцию — статус, передачу, комментарий.
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={load} className="gap-1.5 text-xs cursor-pointer w-fit">
@@ -128,15 +142,16 @@ export default function IncidentsPage() {
 
         <SectorTabs value={sector} onChange={setSector} />
 
-        <div className="bg-card border border-border p-4 rounded-2xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 shadow-sm">
+        <div className="bg-card border border-border p-4 rounded-2xl grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-3 shadow-sm">
           <div className="flex flex-col gap-1.5 lg:col-span-1">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Поиск</span>
             <SearchInput value={query} onChange={setQuery} placeholder="Объект, адрес, камера..." />
           </div>
-          <NativeSelect label="Район" value={district} onChange={setDistrict} options={DISTRICT_OPTIONS} />
+          <CitySelect value={city} onChange={setCity} />
+          <NativeSelect label="Источник" value={source} onChange={setSource} options={SOURCE_OPTIONS} />
           <NativeSelect label="Статус" value={status} onChange={setStatus} options={STATUS_OPTIONS} />
           <NativeSelect label="Критичность" value={severity} onChange={setSeverity} options={SEVERITY_OPTIONS} />
-          <NativeSelect label="Период" value={days} onChange={setDays} options={PERIOD_OPTIONS} />
+          <NativeSelect label="Период" value={days} onChange={setDays} options={[{ value: "0", label: "Всё время" }, ...PERIOD_OPTIONS]} />
         </div>
 
         {facility && (
@@ -170,7 +185,7 @@ export default function IncidentsPage() {
                     <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider w-[150px]">Время</TableHead>
                     <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Событие</TableHead>
                     <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Объект</TableHead>
-                    <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Район</TableHead>
+                    <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Город</TableHead>
                     <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Статус</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -191,13 +206,19 @@ export default function IncidentsPage() {
                           <span className="font-medium text-foreground">{i.type}</span>
                           {i.isDemo && <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1 text-[9px] font-medium text-amber-700 dark:text-amber-300">ДЕМО</span>}
                         </div>
-                        <div className="text-[10px] text-muted-foreground mt-1 truncate max-w-[260px]">{i.cameraName}</div>
+                        <div className="text-[10px] text-muted-foreground mt-1 truncate max-w-[260px]">
+                          {i.source === "live" ? "Живой мониторинг · " : i.source === "journal" ? "Видеожурнал · " : ""}
+                          {i.cameraName}
+                        </div>
                       </TableCell>
                       <TableCell className="text-xs">
                         <div className="font-medium text-foreground">{i.facility?.name ?? "—"}</div>
                         {i.facility && <SectorLabel sector={i.facility.sector} />}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{i.facility?.district ?? "—"}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        <div className="text-foreground">{i.facility?.city || "—"}</div>
+                        {i.facility?.district && <div>{i.facility.district}</div>}
+                      </TableCell>
                       <TableCell className="text-xs">
                         <div className="flex flex-col gap-1 items-start">
                           <IncidentStatusBadge status={i.status} />

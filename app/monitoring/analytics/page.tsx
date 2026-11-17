@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
-import { SectorTabs, NativeSelect, DISTRICT_OPTIONS, PERIOD_OPTIONS, SectorDot } from "@/components/shared/filters"
+import { SectorTabs, NativeSelect, CitySelect, PERIOD_OPTIONS, SectorDot } from "@/components/shared/filters"
 import { ChartTooltipProvider, ChartCard, HBarList, DailyStacked, WeekHourHeatmap } from "@/components/analytics/charts"
 import { SECTOR_META, type Sector } from "@/lib/sectors"
 import { Activity, ShieldAlert, Clock, AlertTriangle, Timer, Ban, RefreshCw } from "lucide-react"
@@ -25,16 +25,17 @@ interface Analytics {
   }
   bySector: { sector: Sector; label: string; total: number; critical: number; open: number }[]
   byDistrict: { district: string; total: number; critical: number; open: number }[]
+  placeLevel?: "city" | "district"
   byDay: { date: string; critical: number; warning: number; info: number }[]
   heat: number[][]
   topTypes: { type: string; count: number }[]
-  topFacilities: { id: string; name: string; sector: string; district: string; total: number; critical: number }[]
+  topFacilities: { id: string; name: string; sector: string; district: string; city?: string; total: number; critical: number }[]
   camerasBySector: { sector: Sector; label: string; total: number; online: number }[]
 }
 
 export default function AnalyticsPage() {
   const [sector, setSector] = useState<Sector | "all">("all")
-  const [district, setDistrict] = useState("all")
+  const [city, setCity] = useState("all")
   const [days, setDays] = useState("7")
   const [data, setData] = useState<Analytics | null>(null)
   const [loading, setLoading] = useState(false)
@@ -43,8 +44,8 @@ export default function AnalyticsPage() {
   // Район и сектор из адреса (переход с карты: ?district=Абайский)
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search)
-    const dist = sp.get("district")
-    if (dist) setDistrict(dist)
+    const c = sp.get("city")
+    if (c) setCity(c)
     const s = sp.get("sector")
     if (s) setSector(s as Sector)
   }, [])
@@ -53,7 +54,7 @@ export default function AnalyticsPage() {
     setLoading(true)
     setError(null)
     try {
-      const r = await fetch(`/api/analytics?${new URLSearchParams({ sector, district, days })}`)
+      const r = await fetch(`/api/analytics?${new URLSearchParams({ sector, city, days })}`)
       const json = await r.json()
       if (!r.ok) throw new Error(json.error || "Ошибка")
       setData(json)
@@ -62,7 +63,7 @@ export default function AnalyticsPage() {
     } finally {
       setLoading(false)
     }
-  }, [sector, district, days])
+  }, [sector, city, days])
 
   useEffect(() => {
     load()
@@ -96,7 +97,7 @@ export default function AnalyticsPage() {
         <div className="p-6 flex flex-col gap-5 max-w-7xl mx-auto w-full">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
             <div className="flex flex-col gap-1.5">
-              <h1 className="text-2xl font-bold tracking-tight text-foreground">Аналитика инцидентов г. Шымкент</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">Аналитика инцидентов</h1>
               <p className="text-sm text-muted-foreground">
                 Сводка по секторам, районам и времени суток, контроль сроков реагирования
               </p>
@@ -110,7 +111,7 @@ export default function AnalyticsPage() {
           <div className="flex flex-col lg:flex-row lg:items-end gap-3">
             <SectorTabs value={sector} onChange={setSector} />
             <div className="flex gap-3 lg:ml-auto">
-              <NativeSelect label="Район" value={district} onChange={setDistrict} options={DISTRICT_OPTIONS} className="min-w-[180px]" />
+              <CitySelect value={city} onChange={setCity} className="min-w-[180px]" />
               <NativeSelect label="Период" value={days} onChange={setDays} options={PERIOD_OPTIONS} className="min-w-[120px]" />
             </div>
           </div>
@@ -127,14 +128,7 @@ export default function AnalyticsPage() {
                 Убрать демо-данные
               </button>
             </div>
-          ) : (
-            <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
-              {demoMsg && <span>{demoMsg}</span>}
-              <button type="button" disabled={demoBusy} onClick={() => toggleDemo(true)} className="cursor-pointer underline disabled:opacity-50">
-                {demoBusy ? "Загружаем…" : "Загрузить демо-данные для показа"}
-              </button>
-            </div>
-          ))}
+          ) : null)}
 
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
             <Kpi icon={<Activity className="size-5" />} label="Всего событий" value={t?.total} />
@@ -169,12 +163,12 @@ export default function AnalyticsPage() {
             <ChartCard title="Когда происходят события" subtitle="День недели × час — для планирования патрулей и дежурств" className="lg:col-span-3">
               {data && <WeekHourHeatmap heat={data.heat} />}
             </ChartCard>
-            <ChartCard title="По районам" subtitle="Всего событий за период" className="lg:col-span-2">
+            <ChartCard title={data?.placeLevel === "district" ? "По районам" : "По городам"} subtitle="Всего событий за период" className="lg:col-span-2">
               {data && (
                 <HBarList
                   rows={data.byDistrict.map((d) => ({
                     key: d.district,
-                    label: `${d.district} район`,
+                    label: d.district,
                     value: d.total,
                     extra: `Критичных: ${d.critical} · открытых: ${d.open}`,
                   }))}
@@ -196,7 +190,7 @@ export default function AnalyticsPage() {
                       <SectorDot sector={f.sector} />
                       <span className="flex-1 min-w-0">
                         <span className="block truncate text-foreground">{f.name}</span>
-                        <span className="text-[10px] text-muted-foreground">{f.district} р-н · критичных {f.critical}</span>
+                        <span className="text-[10px] text-muted-foreground">{[f.city, f.district].filter(Boolean).join(", ")} · критичных {f.critical}</span>
                       </span>
                       <span className="font-mono text-foreground">{f.total}</span>
                     </li>

@@ -13,9 +13,13 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1170.0",
+    "@aws-sdk/lib-storage": "^3.1170.0",
+    "@aws-sdk/s3-request-presigner": "^3.1170.0",
     "@base-ui/react": "^1.6.0",
     "@prisma/client": "^6.19.3",
     "@types/leaflet": "^1.9.21",
+    "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
@@ -25,6 +29,7 @@
     "leaflet-defaulticon-compatibility": "^0.1.2",
     "lucide-react": "^1.21.0",
     "next": "^15.5.19",
+    "postgres": "^3.4.9",
     "prisma": "^6.19.3",
     "react": "19.1.0",
     "react-day-picker": "^10.0.1",
@@ -38,6 +43,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

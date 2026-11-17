@@ -1,4 +1,8 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "crypto"
+import bcrypt from "bcryptjs"
+
+// Хэши bcrypt приходят из импорта пользователей qoz-vision — входят с теми же паролями
+const isBcrypt = (stored: string) => /^\$2[aby]\$/.test(stored)
 
 // Формат хранения: scrypt$<salt hex>$<hash hex>
 export function hashPassword(plain: string): string {
@@ -8,10 +12,11 @@ export function hashPassword(plain: string): string {
 }
 
 export function isHashed(stored: string): boolean {
-  return stored.startsWith("scrypt$")
+  return stored.startsWith("scrypt$") || isBcrypt(stored)
 }
 
 export function verifyPassword(plain: string, stored: string): boolean {
+  if (isBcrypt(stored)) return bcrypt.compareSync(plain, stored)
   if (!isHashed(stored)) {
     // Старые записи с открытым паролем — сравниваем как есть, при входе перехэшируем
     const a = Buffer.from(plain)

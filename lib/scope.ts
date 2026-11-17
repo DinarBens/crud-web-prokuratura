@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client"
-import { SECTORS, isSector, isIncidentStatus, DISTRICTS, type Sector } from "./sectors"
+import { SECTORS, isSector, isIncidentStatus, type Sector } from "./sectors"
 import { sectorsForRole } from "./roles"
 import type { SessionPayload } from "./session"
 
@@ -24,14 +24,23 @@ export function incidentWhere(session: SessionPayload | null, sp: URLSearchParam
   const sectors = allowedSectors(session, sectorParam && sectorParam !== "all" ? sectorParam : null)
   const facilityFilter: Prisma.FacilityWhereInput = { sector: { in: sectors } }
 
+  // Местоположение: область → город → район (значения берутся из реестра объектов)
+  const region = sp.get("region")
+  if (region && region !== "all") facilityFilter.region = region
+  const city = sp.get("city")
+  if (city && city !== "all") facilityFilter.city = city
   const district = sp.get("district")
-  if (district && (DISTRICTS as readonly string[]).includes(district)) facilityFilter.district = district
+  if (district && district !== "all") facilityFilter.district = district
 
   const facilityId = sp.get("facilityId")
   if (facilityId) and.push({ facilityId })
 
   // События без объекта (старый импорт) видны только ролям с полным доступом и без фильтра по сектору/району
-  const narrowed = (sectorParam && sectorParam !== "all") || district
+  const narrowed =
+    (sectorParam && sectorParam !== "all") ||
+    (region && region !== "all") ||
+    (city && city !== "all") ||
+    (district && district !== "all")
   if (seesAllSectors(session) && !narrowed) {
     and.push({ OR: [{ facility: facilityFilter }, { facilityId: null }] })
   } else {
@@ -48,6 +57,16 @@ export function incidentWhere(session: SessionPayload | null, sp: URLSearchParam
   const severity = sp.get("severity")
   if (severity && severity !== "all") and.push({ severity: { in: severity.split(",") } })
 
+  // Источник: journal (видеожурнал), live (живой мониторинг), manual
+  const source = sp.get("source")
+  if (source && source !== "all") and.push({ source: { in: source.split(",") } })
+
+  const category = sp.get("category")
+  if (category && category !== "all") and.push({ category })
+
+  // Демо-записи в единой платформе не показываются
+  and.push({ isDemo: false })
+
   const type = sp.get("type")
   if (type && type !== "all") and.push({ type })
 
@@ -59,6 +78,8 @@ export function incidentWhere(session: SessionPayload | null, sp: URLSearchParam
         { details: { contains: query, mode: "insensitive" } },
         { facility: { name: { contains: query, mode: "insensitive" } } },
         { facility: { address: { contains: query, mode: "insensitive" } } },
+        { title: { contains: query, mode: "insensitive" } },
+        { type: { contains: query, mode: "insensitive" } },
       ],
     })
   }

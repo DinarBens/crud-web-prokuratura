@@ -15,95 +15,71 @@ import {
 import {
   LuGalleryVerticalEnd,
   LuMap,
-  LuMonitor,
   LuVideo,
   LuTv,
   LuSiren,
   LuBuilding2,
+  LuChartColumn,
+  LuFileSpreadsheet,
+  LuDatabase,
+  LuInbox,
 } from "react-icons/lu"
+import { ROLE_META, type Role } from "@/lib/roles"
 
-// This is sample data.
-// Пользователь подставляется из сессии на сервере в следующей итерации; пока — статично
-const data = {
-  user: {
-    name: "Оператор",
-    email: "Прокуратура г. Шымкент",
-    avatar: "/avatars/shadcn.jpg",
+const teams = [
+  {
+    name: "Alatau Vision",
+    logo: <LuGalleryVerticalEnd />,
+    plan: "Единая платформа",
   },
-  teams: [
-    {
-      name: "Alatau Vision",
-      logo: <LuGalleryVerticalEnd />,
-      plan: "Прокуратура г. Шымкент",
-    },
-  ],
-  navMain: [
-    {
-      title: "Карта города",
-      url: "/",
-      icon: <LuMap />,
-    },
-    {
-      title: "Инциденты",
-      url: "/incidents",
-      icon: <LuSiren />,
-      isActive: true,
-      items: [
-        { title: "Все открытые", url: "/incidents" },
-        { title: "Школы", url: "/incidents?sector=SCHOOL" },
-        { title: "Детские сады", url: "/incidents?sector=KINDERGARTEN" },
-        { title: "Медицина", url: "/incidents?sector=MEDICAL" },
-        { title: "Камеры ДП", url: "/incidents?sector=POLICE" },
-        { title: "Городские камеры", url: "/incidents?sector=CITY" },
-      ],
-    },
-    {
-      title: "Объекты",
-      url: "/objects",
-      icon: <LuBuilding2 />,
-      items: [
-        { title: "Все объекты", url: "/objects" },
-        { title: "Школы", url: "/objects?sector=SCHOOL" },
-        { title: "Детские сады", url: "/objects?sector=KINDERGARTEN" },
-        { title: "Медицина", url: "/objects?sector=MEDICAL" },
-        { title: "Департамент полиции", url: "/objects?sector=POLICE" },
-        { title: "Городские камеры", url: "/objects?sector=CITY" },
-      ],
-    },
-    {
-      title: "Мониторинг",
-      url: "#",
-      icon: <LuMonitor />,
-      items: [
-        { title: "Аналитика", url: "/monitoring/analytics" },
-        { title: "Отчет", url: "/monitoring/reports" },
-        { title: "Журнал тревог", url: "/monitoring/alarms" },
-      ],
-    },
-    {
-      title: "Камеры",
-      url: "/cameras",
-      icon: <LuVideo />,
-    },
-    {
-      title: "Экраны",
-      url: "/screens",
-      icon: <LuTv />,
-    },
-  ],
-}
+]
+
+const navMain = [
+  { title: "Обзор", url: "/", icon: <LuMap /> },
+  {
+    title: "Инциденты",
+    url: "/incidents",
+    icon: <LuSiren />,
+    isActive: true,
+    items: [
+      { title: "Ждут реакции", url: "/incidents?status=open" },
+      { title: "Все", url: "/incidents?status=all" },
+      { title: "Видеожурнал", url: "/incidents?source=journal&status=all" },
+      { title: "Критичные", url: "/incidents?severity=critical&status=all" },
+    ],
+  },
+  { title: "Неразобранные", url: "/incidents?source=live&status=NEW", icon: <LuInbox /> },
+  { title: "Камеры", url: "/cameras", icon: <LuVideo /> },
+  { title: "Объекты", url: "/objects", icon: <LuBuilding2 /> },
+  { title: "Аналитика", url: "/monitoring/analytics", icon: <LuChartColumn /> },
+  { title: "Отчёты", url: "/monitoring/reports", icon: <LuFileSpreadsheet /> },
+  { title: "Экраны", url: "/screens", icon: <LuTv /> },
+]
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const [me, setMe] = React.useState<{ email: string; name: string | null; role: string } | null>(null)
+  React.useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setMe(j?.user ?? null))
+      .catch(() => {})
+  }, [])
+  const items = me?.role === "ADMIN" ? [...navMain, { title: "Импорт данных", url: "/admin/import", icon: <LuDatabase /> }] : navMain
+  const user = {
+    name: me?.name || me?.email || "Пользователь",
+    email: me ? ROLE_META[me.role as Role]?.label ?? me.role : "",
+    avatar: "/avatars/shadcn.jpg",
+  }
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <TeamSwitcher teams={data.teams} />
+        <TeamSwitcher teams={teams} />
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
+        <NavMain items={items} />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser user={user} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

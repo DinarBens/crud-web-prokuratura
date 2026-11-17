@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table"
 import { Play, Calendar, Video, Plus, RefreshCw, VideoOff } from "lucide-react"
 import { checkStream, type StreamCheck } from "@/lib/stream-health"
+import { CitySelect, NativeSelect } from "@/components/shared/filters"
 
 interface Camera {
   id: string
@@ -26,6 +27,8 @@ interface Camera {
   streamUrl: string
   status?: string
   lastCheckedAt?: string | null
+  organization?: string
+  facility?: { id: string; name: string; city: string } | null
 }
 
 const RECHECK_AFTER_MS = 10 * 60 * 1000 // перепроверять потоки, если последняя проверка старше 10 минут
@@ -40,6 +43,8 @@ function formatAgo(v: string) {
 export default function CamerasPage() {
   const [cameras, setCameras] = useState<Camera[]>([])
   const [search, setSearch] = useState("")
+  const [city, setCity] = useState("all")
+  const [facilityId, setFacilityId] = useState("all")
   const [viewMode, setViewMode] = useState<"table" | "card">("table")
   const [loading, setLoading] = useState(false)
 
@@ -180,11 +185,16 @@ export default function CamerasPage() {
   )
 
   // Рабочие камеры — наверху. Порядок берём от серверной проверки, чтобы карточки не прыгали во время просмотра.
+  const facilityOptions = Array.from(
+    new Map(cameras.filter((c) => c.facility && (city === "all" || c.facility.city === city)).map((c) => [c.facility!.id, c.facility!.name])).entries()
+  ).sort((a, b) => a[1].localeCompare(b[1], "ru"))
   const filteredCameras = cameras
-    .filter((cam) =>
-      cam.name.toLowerCase().includes(search.toLowerCase()) ||
-      cam.info.toLowerCase().includes(search.toLowerCase())
-    )
+    .filter((cam) => city === "all" || cam.facility?.city === city)
+    .filter((cam) => facilityId === "all" || cam.facility?.id === facilityId)
+    .filter((cam) => {
+      const q = search.toLowerCase()
+      return cam.name.toLowerCase().includes(q) || cam.info.toLowerCase().includes(q) || (cam.facility?.name ?? "").toLowerCase().includes(q)
+    })
     .filter((cam) => showOffline || isOnline(cam))
     .sort((a, b) => Number(b.status !== "offline") - Number(a.status !== "offline"))
 
@@ -194,13 +204,13 @@ export default function CamerasPage() {
         { label: "Камеры", active: true },
       ]}
     >
-      <div className="p-6 flex flex-col gap-6 max-w-7xl mx-auto w-full">
+      <div className="p-6 flex flex-col gap-6 max-w-7xl mx-auto w-full min-w-0">
         {/* Header section with add button */}
         <div className="flex items-center justify-between gap-4">
           <div className="flex flex-col gap-1.5">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">Источники видео</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Камеры</h1>
             <p className="text-sm text-muted-foreground">
-              Управление подключенными камерами и просмотр трансляций в реальном времени
+              Прямой эфир и архив. Камеры, которые отдают видео, — вверху списка.
             </p>
           </div>
 
@@ -278,13 +288,23 @@ export default function CamerasPage() {
         </div>
 
         {/* Filters and Toggle section */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-card border border-border p-4 rounded-2xl shadow-sm">
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Поиск по имени камеры или информации..."
-            className="max-w-md"
-          />
+        <div className="flex flex-wrap items-end justify-between gap-4 bg-card border border-border p-4 rounded-2xl shadow-sm">
+          <div className="flex flex-wrap items-end gap-3 flex-1 min-w-0">
+            <CitySelect value={city} onChange={(v) => { setCity(v); setFacilityId("all") }} className="min-w-[170px]" />
+            <NativeSelect
+              label="Объект"
+              value={facilityId}
+              onChange={setFacilityId}
+              options={[{ value: "all", label: "Все объекты" }, ...facilityOptions.map(([value, label]) => ({ value, label }))]}
+              className="min-w-[200px] max-w-[280px]"
+            />
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Поиск по камере или объекту..."
+              className="max-w-md flex-1 min-w-[200px]"
+            />
+          </div>
           <ViewToggle mode={viewMode} onChange={setViewMode} />
         </div>
 
@@ -328,13 +348,13 @@ export default function CamerasPage() {
             </p>
           </div>
         ) : viewMode === "table" ? (
-          <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+          <div className="bg-card border border-border rounded-2xl overflow-x-auto shadow-sm">
             <Table>
               <TableHeader className="bg-secondary/25 border-b border-border">
                 <TableRow className="hover:bg-transparent border-b border-border/80">
                   <TableHead className="w-[120px] text-xs font-semibold text-muted-foreground uppercase tracking-wider">Статус</TableHead>
                   <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Имя камеры</TableHead>
-                  <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Информация</TableHead>
+                  <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Объект</TableHead>
                   <TableHead className="w-[240px] text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Действия</TableHead>
                 </TableRow>
               </TableHeader>
@@ -349,7 +369,16 @@ export default function CamerasPage() {
                       )}
                     </TableCell>
                     <TableCell className="font-medium text-foreground text-xs">{cam.name}</TableCell>
-                    <TableCell className="text-muted-foreground text-xs">{cam.info}</TableCell>
+                    <TableCell className="text-muted-foreground text-xs whitespace-normal">
+                      {cam.facility ? (
+                        <>
+                          <div className="text-foreground">{cam.facility.name}</div>
+                          <div className="text-[11px]">{[cam.facility.city, cam.info.split(" | ")[0]].filter(Boolean).join(" · ")}</div>
+                        </>
+                      ) : (
+                        cam.info
+                      )}
+                    </TableCell>
                     <TableCell className="text-right flex items-center justify-end gap-2 h-[52px]">
                       <Button
                         variant="outline"

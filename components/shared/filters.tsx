@@ -1,7 +1,7 @@
 "use client"
 
-import React from "react"
-import { SECTORS, SECTOR_META, DISTRICTS, STATUS_META, type Sector, type IncidentStatus } from "@/lib/sectors"
+import React, { useEffect, useState } from "react"
+import { SECTORS, SECTOR_META, STATUS_META, type Sector, type IncidentStatus } from "@/lib/sectors"
 import { cn } from "@/lib/utils"
 
 // Вкладки секторов: Все / Школы / Детсады / Медицина / ДП / Город
@@ -97,13 +97,61 @@ export function NativeSelect({
   )
 }
 
-export const DISTRICT_OPTIONS = [{ value: "all", label: "Все районы" }, ...DISTRICTS.map((d) => ({ value: d, label: `${d} район` }))]
+// Города и области из реестра объектов (а не фиксированный список) — для фильтров
+export interface LocationTree {
+  regions: { name: string; incidents: number; cities: { name: string; incidents: number }[] }[]
+}
+
+let locationsCache: Promise<LocationTree> | null = null
+export function useLocations(): LocationTree | null {
+  const [data, setData] = useState<LocationTree | null>(null)
+  useEffect(() => {
+    locationsCache ??= fetch("/api/locations").then((r) => r.json())
+    locationsCache.then(setData).catch(() => setData({ regions: [] }))
+  }, [])
+  return data
+}
+
+// Выбор города с группировкой по областям
+export function CitySelect({ value, onChange, className }: { value: string; onChange: (v: string) => void; className?: string }) {
+  const tree = useLocations()
+  return (
+    <label className={cn("flex flex-col gap-1.5", className)}>
+      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Город</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-9 rounded-lg border border-border bg-card px-3 text-sm text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary"
+      >
+        <option value="all">Все города</option>
+        {tree?.regions.map((r) => (
+          <optgroup key={r.name} label={r.name}>
+            {r.cities.map((c) => (
+              <option key={c.name} value={c.name}>
+                {c.name}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+        {value !== "all" && !tree?.regions.some((r) => r.cities.some((c) => c.name === value)) && <option value={value}>{value}</option>}
+      </select>
+    </label>
+  )
+}
+
+export const SOURCE_OPTIONS = [
+  { value: "all", label: "Все источники" },
+  { value: "journal", label: "Видеожурнал" },
+  { value: "live", label: "Живой мониторинг" },
+  { value: "manual", label: "Внесены вручную" },
+]
 
 export const PERIOD_OPTIONS = [
   { value: "1", label: "Сутки" },
   { value: "7", label: "7 дней" },
   { value: "30", label: "30 дней" },
   { value: "90", label: "90 дней" },
+  { value: "365", label: "Год" },
 ]
 
 export function formatDateTime(v: string | Date) {

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { getSession } from "@/lib/session"
 import { incidentWhere, allowedSectors } from "@/lib/scope"
-import { DISTRICTS, SECTOR_META, SLA_MINUTES, STATUS_META, isSector, type Severity, type IncidentStatus } from "@/lib/sectors"
+import { SECTOR_META, SLA_MINUTES, STATUS_META, isSector, type Severity, type IncidentStatus } from "@/lib/sectors"
 
 const TZ_MS = 5 * 3600_000
 
@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   try {
     const session = await getSession(request)
     const sp = new URL(request.url).searchParams
-    const days = Math.min(Math.max(Number(sp.get("days")) || 7, 1), 90)
+    const days = Math.min(Math.max(Number(sp.get("days")) || 7, 1), 365)
     sp.set("days", String(days))
 
     const events = await db.alarmEvent.findMany({
@@ -23,7 +23,8 @@ export async function GET(request: Request) {
         severity: true,
         status: true,
         isDemo: true,
-        facility: { select: { id: true, name: true, sector: true, district: true } },
+        source: true,
+        facility: { select: { id: true, name: true, sector: true, district: true, city: true } },
         actions: { select: { createdAt: true }, orderBy: { createdAt: "asc" }, take: 1 },
       },
       take: 50000,
@@ -36,9 +37,14 @@ export async function GET(request: Request) {
     const bySector = Object.fromEntries(
       sectors.map((s) => [s, { sector: s, label: SECTOR_META[s].plural, total: 0, critical: 0, open: 0 }])
     )
-    const byDistrict = Object.fromEntries(DISTRICTS.map((d) => [d, { district: d, total: 0, critical: 0, open: 0 }]))
+    // По городам (а внутри одного города — по районам), список строится из фактических данных
+    const byPlace = new Map<string, { district: string; total: number; critical: number; open: number }>()
+    const bySource = new Map<string, number>()
     const typeCounts = new Map<string, number>()
-    const facilityCounts = new Map<string, { id: string; name: string; sector: string; district: string; total: number; critical: number }>()
+    const facilityCounts = new Map<string, { id: string; name: string; sector: string; district: string; city: string; total: number; critical: number }>()
+    const cityFilter = sp.get("city")
+    const placeOf = (f: { city: string; district: string }) =>
+      cityFilter && cityFilter !== "all" ? f.district || f.city || "Не указан" : f.city || "Не указан"
     const heat: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0))
 
     // Дни периода — сутки по времени Алматы (UTC+5)
@@ -80,11 +86,15 @@ export async function GET(request: Request) {
         if (sev === "critical") bySector[f.sector].critical++
         if (isOpen) bySector[f.sector].open++
       }
-      if (f && byDistrict[f.district]) {
-        byDistrict[f.district].total++
-        if (sev === "critical") byDistrict[f.district].critical++
-        if (isOpen) byDistrict[f.district].open++
+      if (f) {
+        const key = placeOf(f)
+        const cur = byPlace.get(key) ?? { district: key, total: 0, critical: 0, open: 0 }
+        cur.total++
+        if (sev === "critical") cur.critical++
+        if (isOpen) cur.open++
+        byPlace.set(key, cur)
       }
+      bySource.set(e.source, (bySource.get(e.source) ?? 0) + 1)
       if (f) {
         const cur = facilityCounts.get(f.id) ?? { ...f, total: 0, critical: 0 }
         cur.total++
@@ -134,7 +144,9 @@ export async function GET(request: Request) {
         falseAlarmRate: events.length ? Math.round((falseAlarm / events.length) * 100) : 0,
       },
       bySector: Object.values(bySector),
-      byDistrict: Object.values(byDistrict),
+      byDistrict: [...byPlace.values()].sort((a, b) => b.total - a.total),
+      placeLevel: cityFilter && cityFilter !== "all" ? "district" : "city",
+      bySource: [...bySource.entries()].map(([source, count]) => ({ source, count })),
       byDay: Object.values(byDay),
       heat,
       topTypes: [...typeCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([type, count]) => ({ type, count })),

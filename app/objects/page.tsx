@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { SearchInput } from "@/components/shared/search-input"
 import { StreamViewer } from "@/components/shared/stream-viewer"
-import { SectorTabs, SectorLabel, NativeSelect, DISTRICT_OPTIONS } from "@/components/shared/filters"
+import { SectorTabs, SectorLabel, CitySelect } from "@/components/shared/filters"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -24,6 +24,8 @@ interface Facility {
   name: string
   sector: string
   district: string
+  city?: string
+  region?: string
   address: string
   owner: string | null
   responsibleName: string | null
@@ -36,7 +38,7 @@ interface Facility {
 
 export default function ObjectsPage() {
   const [sector, setSector] = useState<Sector | "all">("all")
-  const [district, setDistrict] = useState("all")
+  const [city, setCity] = useState("all")
   const [query, setQuery] = useState("")
   const [items, setItems] = useState<Facility[]>([])
   const [summary, setSummary] = useState<{ sector: Sector; facilities: number }[]>([])
@@ -48,8 +50,8 @@ export default function ObjectsPage() {
     const sp = new URLSearchParams(window.location.search)
     const s = sp.get("sector")
     if (s) setSector(s as Sector)
-    const dist = sp.get("district")
-    if (dist) setDistrict(dist)
+    const c = sp.get("city")
+    if (c) setCity(c)
     const q = sp.get("query")
     if (q) setQuery(q)
   }, [])
@@ -58,7 +60,7 @@ export default function ObjectsPage() {
     const t = setTimeout(async () => {
       setLoading(true)
       try {
-        const p = new URLSearchParams({ sector, district, withCameras: "1" })
+        const p = new URLSearchParams({ sector, city, withCameras: "1" })
         if (query) p.set("query", query)
         const r = await fetch(`/api/facilities?${p}`)
         const json = await r.json()
@@ -69,7 +71,7 @@ export default function ObjectsPage() {
       }
     }, query ? 300 : 0)
     return () => clearTimeout(t)
-  }, [sector, district, query])
+  }, [sector, city, query])
 
   const counts = useMemo(() => {
     const c: Partial<Record<Sector | "all", number>> = { all: summary.reduce((a, s) => a + s.facilities, 0) }
@@ -93,7 +95,7 @@ export default function ObjectsPage() {
         <div className="flex flex-col gap-1.5">
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Реестр объектов и камер</h1>
           <p className="text-sm text-muted-foreground">
-            Школы, детские сады, медицинские организации, камеры Департамента полиции и городские камеры г. Шымкент — в одном месте
+            Все объекты с камерами: школы, детские сады, медицинские и социальные учреждения — по городам и регионам
           </p>
         </div>
 
@@ -116,7 +118,7 @@ export default function ObjectsPage() {
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Поиск</span>
             <SearchInput value={query} onChange={setQuery} placeholder="Название или адрес..." />
           </div>
-          <NativeSelect label="Район" value={district} onChange={setDistrict} options={DISTRICT_OPTIONS} />
+          <CitySelect value={city} onChange={setCity} />
         </div>
 
         <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
@@ -131,7 +133,7 @@ export default function ObjectsPage() {
                   <TableRow className="hover:bg-transparent">
                     <TableHead className="w-8" />
                     <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Объект</TableHead>
-                    <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Район / адрес</TableHead>
+                    <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Город / адрес</TableHead>
                     <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Камеры</TableHead>
                     <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Инциденты</TableHead>
                     <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Ответственный</TableHead>
@@ -149,7 +151,7 @@ export default function ObjectsPage() {
                           <SectorLabel sector={f.sector} />
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          <div className="text-foreground">{f.district}</div>
+                          <div className="text-foreground">{[f.city, f.district].filter(Boolean).join(", ") || "—"}</div>
                           {f.address}
                         </TableCell>
                         <TableCell className="text-xs font-mono">

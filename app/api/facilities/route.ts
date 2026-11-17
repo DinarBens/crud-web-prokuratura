@@ -2,7 +2,8 @@ import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { getSession } from "@/lib/session"
 import { allowedSectors } from "@/lib/scope"
-import { DISTRICTS, OPEN_STATUSES, SECTOR_META, isSector } from "@/lib/sectors"
+import { OPEN_STATUSES, SECTOR_META, isSector } from "@/lib/sectors"
+import { cityByName } from "@/lib/locations"
 import { sectorsForRole } from "@/lib/roles"
 import { Prisma } from "@prisma/client"
 
@@ -15,8 +16,13 @@ export async function GET(request: Request) {
     const sectors = allowedSectors(session, sectorParam && sectorParam !== "all" ? sectorParam : null)
 
     const where: Prisma.FacilityWhereInput = { sector: { in: sectors } }
+    where.isDemo = false
+    const region = sp.get("region")
+    if (region && region !== "all") where.region = region
+    const city = sp.get("city")
+    if (city && city !== "all") where.city = city
     const district = sp.get("district")
-    if (district && (DISTRICTS as readonly string[]).includes(district)) where.district = district
+    if (district && district !== "all") where.district = district
     const q = sp.get("query")
     if (q) {
       where.OR = [
@@ -52,7 +58,7 @@ export async function GET(request: Request) {
     const roleSectors = sectorsForRole(session?.role)
     const grouped = await db.facility.groupBy({
       by: ["sector"],
-      where: { sector: { in: [...roleSectors] } },
+      where: { sector: { in: [...roleSectors] }, isDemo: false },
       _count: { _all: true },
     })
     const summary = roleSectors.map((s) => ({
@@ -77,14 +83,17 @@ export async function POST(request: Request) {
     const b = await request.json()
     const lat = Number(b.latitude)
     const lng = Number(b.longitude)
-    if (!b.name || !isSector(b.sector) || !(DISTRICTS as readonly string[]).includes(b.district) || !b.address || isNaN(lat) || isNaN(lng)) {
-      return NextResponse.json({ error: "Заполните название, сектор, район, адрес и координаты" }, { status: 400 })
+    const cityRef = cityByName(b.city)
+    if (!b.name || !isSector(b.sector) || !b.city || !b.address || isNaN(lat) || isNaN(lng)) {
+      return NextResponse.json({ error: "Заполните название, сектор, город, адрес и координаты" }, { status: 400 })
     }
     const facility = await db.facility.create({
       data: {
         name: String(b.name),
         sector: b.sector,
-        district: b.district,
+        region: String(b.region || cityRef?.region || ""),
+        city: String(cityRef?.name || b.city),
+        district: String(b.district || ""),
         address: String(b.address),
         latitude: lat,
         longitude: lng,

@@ -20,10 +20,19 @@ interface IncidentDetail {
   forwardedTo: string | null
   resolvedAt: string | null
   isDemo?: boolean
+  source?: string
+  title?: string | null
+  category?: string | null
+  confidence?: number | null
+  mediaKey?: string | null
+  mediaType?: string | null
+  sourceMediaPath?: string | null
   facility: {
     name: string
     sector: string
     district: string
+    city?: string
+    region?: string
     address: string
     responsibleName: string | null
     responsiblePhone: string | null
@@ -130,7 +139,7 @@ export function IncidentDialog({
                     <div className="font-semibold text-sm text-foreground">{data.facility.name}</div>
                     <SectorLabel sector={data.facility.sector} />
                     <div className="flex items-start gap-2 text-muted-foreground">
-                      <MapPin className="size-3.5 mt-0.5 shrink-0" /> {data.facility.district} р-н, {data.facility.address}
+                      <MapPin className="size-3.5 mt-0.5 shrink-0" /> {[data.facility.region, data.facility.city, data.facility.district].filter(Boolean).join(", ")}{data.facility.address ? `, ${data.facility.address}` : ""}
                     </div>
                   </>
                 ) : (
@@ -153,7 +162,29 @@ export function IncidentDialog({
               </div>
             </div>
 
-            <p className="text-xs text-muted-foreground leading-relaxed border-t border-border/40 pt-4">{data.details}</p>
+            {/* Запись или кадр события из хранилища */}
+            {data.mediaKey ? (
+              data.mediaType === "image" ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={`/api/media?incident=${data.id}`} alt={data.type} className="w-full rounded-xl border border-border bg-black object-contain max-h-[420px]" />
+              ) : (
+                <video src={`/api/media?incident=${data.id}`} controls preload="metadata" className="w-full rounded-xl border border-border bg-black max-h-[420px]" />
+              )
+            ) : data.sourceMediaPath ? (
+              <div className="rounded-xl border border-dashed border-border p-4 text-xs text-muted-foreground">
+                Запись ещё копируется в хранилище платформы — появится после завершения импорта.
+              </div>
+            ) : null}
+
+            {data.title && <div className="text-sm font-medium text-foreground">{data.title}</div>}
+            <p className="text-xs text-muted-foreground leading-relaxed border-t border-border/40 pt-4 whitespace-pre-line">{data.details}</p>
+            {(data.source === "journal" || data.source === "live" || data.confidence != null) && (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                {data.source === "journal" && <span>Источник: видеожурнал</span>}
+                {data.source === "live" && <span>Источник: живой мониторинг</span>}
+                {data.confidence != null && <span>Уверенность ИИ: {Math.round((data.confidence > 1 ? data.confidence / 100 : data.confidence) * 100)}%</span>}
+              </div>
+            )}
 
             {data.camera?.streamUrl && !data.camera.streamUrl.startsWith("demo://") && (
               showVideo ? (

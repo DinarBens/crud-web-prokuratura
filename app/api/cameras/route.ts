@@ -8,7 +8,7 @@ export async function GET(request: Request) {
     const cameras = await db.camera.findMany({
       // Демо-камеры (имитация) в общий список видеоисточников не попадают
       where: facilityId ? { facilityId } : { isDemo: false },
-      include: { facility: { select: { id: true, name: true, sector: true, district: true } } },
+      include: { facility: { select: { id: true, name: true, sector: true, district: true, city: true } } },
       orderBy: { createdAt: "desc" },
     })
     // Рабочие камеры — первыми, дальше по имени

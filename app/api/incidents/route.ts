@@ -14,7 +14,7 @@ export async function GET(request: Request) {
       db.alarmEvent.findMany({
         where,
         include: {
-          facility: { select: { id: true, name: true, sector: true, district: true, address: true } },
+          facility: { select: { id: true, name: true, sector: true, district: true, city: true, region: true, address: true } },
           camera: { select: { id: true, name: true, streamUrl: true } },
         },
         orderBy: [{ timestamp: "desc" }],

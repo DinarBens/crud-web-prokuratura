@@ -39,7 +39,12 @@ model Facility {
   name             String   @unique
   // SCHOOL | KINDERGARTEN | MEDICAL | POLICE | CITY — см. lib/sectors.ts
   sector           String
-  district         String   // район г. Шымкент
+  // Местоположение: область (или город респ. значения) → город → район
+  region           String   @default("")
+  city             String   @default("")
+  district         String   @default("")
+  // Ключ записи-источника при импорте (например, название организации в qoz-vision)
+  externalKey      String?  @unique
   address          String
   latitude         Float
   longitude        Float
@@ -56,6 +61,8 @@ model Facility {
   incidents AlarmEvent[]
 
   @@index([sector])
+  @@index([region])
+  @@index([city])
   @@index([district])
 }
 
@@ -74,6 +81,15 @@ model Camera {
   lastSeenAt    DateTime? // когда поток последний раз отдавал видео
   lastCheckedAt DateTime? // когда проверяли
   isDemo        Boolean   @default(false)
+  // Поля импортированной камеры (qoz-vision)
+  externalId    String?   @unique
+  organization  String?
+  deviceType    String?
+  equipmentId   String?
+  channel       Int?
+  // classroom | corridor | street
+  placement     String?
+  groupName     String?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   screens    Screen[]
@@ -110,11 +126,24 @@ model AlarmEvent {
   snapshotUrl String?
   resolvedAt  DateTime?
   isDemo      Boolean   @default(false)
+  // Источник: manual | journal (видеожурнал qoz-vision) | live (живой мониторинг qoz-vision)
+  source      String    @default("manual")
+  externalId  String?   @unique
+  // Код категории видеоаналитики (fight, weapon, fall…)
+  category    String?
+  confidence  Float?
+  title       String?
+  // Медиа в хранилище платформы: ключ объекта и исходный путь (до копирования)
+  mediaKey    String?
+  mediaType   String?   // video | image
+  sourceMediaPath String?
+  analysis    Json?
   actions     IncidentAction[]
 
   @@index([timestamp])
   @@index([status])
   @@index([facilityId])
+  @@index([source])
 }
 
 // Журнал действий по инциденту — кто, когда и что сделал (для проверки законности и сроков реагирования)
