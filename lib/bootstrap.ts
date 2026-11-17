@@ -27,7 +27,12 @@ export async function bootstrap() {
         startImport({ media: true })
         console.log("[import] запущен автоматический импорт данных qoz-vision")
       } else {
-        console.log(`[import] данные уже загружены (событий: ${imported}, камер: ${cameras}) — автоимпорт пропущен`)
+        const pendingMedia = await db.alarmEvent.count({ where: { sourceMediaPath: { not: null }, mediaKey: null } })
+        console.log(`[import] данные уже загружены (событий: ${imported}, камер: ${cameras}); записей ждут копирования: ${pendingMedia}`)
+        if (pendingMedia > 0) {
+          const { startMediaCopy } = await import("./importer")
+          startMediaCopy()
+        }
       }
     }
   } catch (e) {

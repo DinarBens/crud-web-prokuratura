@@ -325,6 +325,7 @@ export async function copyMedia() {
         if (importState.errors.length < 50) importState.errors.push(`${path}: ${e instanceof Error ? e.message : e}`)
       } finally {
         importState.media.done++
+        if (importState.media.done % 100 === 0) console.log("[media] прогресс:", JSON.stringify(importState.media))
       }
     }
   }
@@ -332,6 +333,32 @@ export async function copyMedia() {
 }
 
 let running: Promise<void> | null = null
+
+// Докопировать только медиа (например, после перезапуска сервера)
+export function startMediaCopy() {
+  if (running) return false
+  importState.phase = "media"
+  importState.startedAt = new Date().toISOString()
+  importState.finishedAt = null
+  importState.errors = []
+  importState.message = "Копируем видео и кадры…"
+  running = (async () => {
+    try {
+      await copyMedia()
+      importState.phase = "done"
+      importState.message = "Импорт завершён"
+      console.log("[media] завершено:", JSON.stringify(importState.media), importState.errors.slice(-5).join(" | "))
+    } catch (e) {
+      importState.phase = "error"
+      importState.message = e instanceof Error ? e.message : String(e)
+      console.error("[media] ошибка:", importState.message)
+    } finally {
+      importState.finishedAt = new Date().toISOString()
+      running = null
+    }
+  })()
+  return true
+}
 
 export function startImport(opts: { media: boolean }) {
   if (running) return false
@@ -351,7 +378,7 @@ export function startImport(opts: { media: boolean }) {
       }
       importState.phase = "done"
       importState.message = "Импорт завершён"
-      console.log("[import] завершён; медиа:", JSON.stringify(importState.media))
+      console.log("[import] завершён; медиа:", JSON.stringify(importState.media), importState.errors.slice(-5).join(" | "))
     } catch (e) {
       importState.phase = "error"
       importState.message = e instanceof Error ? e.message : String(e)
