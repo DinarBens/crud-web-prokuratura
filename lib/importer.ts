@@ -290,7 +290,10 @@ export async function copyMedia() {
   const bucket = process.env.SOURCE_STORAGE_BUCKET || "records"
   const maxBytes = (Number(process.env.MEDIA_MAX_MB) || 2048) * 1024 * 1024
   if (!base || !key || !bucketConfigured()) {
-    importState.errors.push("Медиа не копировались: не заданы SOURCE_SUPABASE_URL / SOURCE_SUPABASE_SERVICE_ROLE_KEY или бакет")
+    const missing = ["SOURCE_SUPABASE_URL", "SOURCE_SUPABASE_SERVICE_ROLE_KEY", "BUCKET_ENDPOINT", "BUCKET_NAME", "BUCKET_ACCESS_KEY_ID", "BUCKET_SECRET_ACCESS_KEY"].filter(
+      (n) => !process.env[n]?.trim()
+    )
+    importState.errors.push(`Медиа не копировались: пустые переменные ${missing.join(", ")}`)
     return
   }
   const pending = await db.alarmEvent.findMany({
