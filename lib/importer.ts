@@ -6,6 +6,7 @@
 // IMPORT_ADMIN_EMAILS — кому дать роль администратора (через запятую), по умолчанию admin@gmail.com.
 
 import postgres from "postgres"
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3"
 import type { Prisma } from "@prisma/client"
 import { db } from "./db"
 import { CITIES, KNOWN_ORGANIZATIONS, UNKNOWN_CITY, cityByName, guessCity } from "./locations"
@@ -284,21 +285,58 @@ export async function importRows() {
 }
 
 // Копирование видео и кадров из хранилища qoz-vision в бакет платформы
+// Источник записей: Supabase Storage по S3 (SUPABASE_S3_* — как в qoz-vision) или по REST (service role key)
+type SourceObject = { body: ReadableStream<Uint8Array>; size: number; type: string | null; cancel: () => Promise<void> }
+
+function sourceS3(): S3Client | null {
+  const endpoint = process.env.SUPABASE_S3_ENDPOINT?.trim()
+  const accessKeyId = process.env.SUPABASE_S3_ACCESS_KEY_ID?.trim()
+  const secretAccessKey = process.env.SUPABASE_S3_SECRET_ACCESS_KEY?.trim()
+  if (!endpoint || !accessKeyId || !secretAccessKey) return null
+  return new S3Client({
+    forcePathStyle: true,
+    region: process.env.SUPABASE_S3_REGION?.trim() || "ap-south-1",
+    endpoint,
+    credentials: { accessKeyId, secretAccessKey },
+  })
+}
+
+export function mediaSourceConfigured(): boolean {
+  return !!sourceS3() || !!(process.env.SOURCE_SUPABASE_URL?.trim() && process.env.SOURCE_SUPABASE_SERVICE_ROLE_KEY?.trim())
+}
+
 export async function copyMedia() {
   const base = (process.env.SOURCE_SUPABASE_URL || "").replace(/\/$/, "")
-  const key = process.env.SOURCE_SUPABASE_SERVICE_ROLE_KEY || ""
+  const key = process.env.SOURCE_SUPABASE_SERVICE_ROLE_KEY?.trim() || ""
   const bucket = process.env.SOURCE_STORAGE_BUCKET || "records"
   const maxBytes = (Number(process.env.MEDIA_MAX_MB) || 2048) * 1024 * 1024
-  if (!base || !key || !bucketConfigured()) {
-    const missing = ["SOURCE_SUPABASE_URL", "SOURCE_SUPABASE_SERVICE_ROLE_KEY", "BUCKET_ENDPOINT", "BUCKET_NAME", "BUCKET_ACCESS_KEY_ID", "BUCKET_SECRET_ACCESS_KEY"].filter(
-      (n) => !process.env[n]?.trim()
-    )
+  const s3src = sourceS3()
+  if (!mediaSourceConfigured() || !bucketConfigured()) {
+    const missing = ["BUCKET_ENDPOINT", "BUCKET_NAME", "BUCKET_ACCESS_KEY_ID", "BUCKET_SECRET_ACCESS_KEY"].filter((n) => !process.env[n]?.trim())
+    if (!mediaSourceConfigured()) missing.push("SUPABASE_S3_ENDPOINT / SUPABASE_S3_ACCESS_KEY_ID / SUPABASE_S3_SECRET_ACCESS_KEY (или SOURCE_SUPABASE_SERVICE_ROLE_KEY)")
     importState.errors.push(`Медиа не копировались: пустые переменные ${missing.join(", ")}`)
     return
+  }
+  const fetchSource = async (path: string): Promise<SourceObject> => {
+    if (s3src) {
+      const out = await s3src.send(new GetObjectCommand({ Bucket: bucket, Key: path }))
+      const body = out.Body as unknown as { transformToWebStream: () => ReadableStream<Uint8Array> } | undefined
+      if (!body) throw new Error("пустой объект")
+      const stream = body.transformToWebStream()
+      return { body: stream, size: Number(out.ContentLength || 0), type: out.ContentType ?? null, cancel: () => stream.cancel() }
+    }
+    const r = await fetch(`${base}/storage/v1/object/${bucket}/${encodeURI(path)}`, {
+      headers: { Authorization: `Bearer ${key}`, apikey: key },
+    })
+    if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`)
+    const stream = r.body
+    return { body: stream, size: Number(r.headers.get("content-length") || 0), type: r.headers.get("content-type"), cancel: () => stream.cancel() }
   }
   const pending = await db.alarmEvent.findMany({
     where: { sourceMediaPath: { not: null }, mediaKey: null },
     select: { id: true, sourceMediaPath: true },
+    // Сначала видео журнала, затем кадры живого мониторинга (свежие первыми)
+    orderBy: [{ source: "asc" }, { timestamp: "desc" }],
   })
   importState.media = { total: pending.length, done: 0, copied: 0, skipped: 0, failed: 0 }
   let next = 0
@@ -309,17 +347,13 @@ export async function copyMedia() {
       const objectKey = `media/${path}`
       try {
         if (!(await objectExists(objectKey))) {
-          const r = await fetch(`${base}/storage/v1/object/${bucket}/${encodeURI(path)}`, {
-            headers: { Authorization: `Bearer ${key}`, apikey: key },
-          })
-          if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`)
-          const size = Number(r.headers.get("content-length") || 0)
-          if (size > maxBytes) {
+          const src = await fetchSource(path)
+          if (src.size > maxBytes) {
             importState.media.skipped++
-            await r.body.cancel()
+            await src.cancel()
             continue
           }
-          await uploadStream(objectKey, r.body, r.headers.get("content-type"))
+          await uploadStream(objectKey, src.body, src.type)
           importState.media.copied++
         }
         await db.alarmEvent.update({ where: { id: item.id }, data: { mediaKey: objectKey } })
@@ -332,7 +366,7 @@ export async function copyMedia() {
       }
     }
   }
-  await Promise.all(Array.from({ length: 3 }, worker))
+  await Promise.all(Array.from({ length: 6 }, worker))
 }
 
 let running: Promise<void> | null = null

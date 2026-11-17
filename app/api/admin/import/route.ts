@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { getSession } from "@/lib/session"
-import { importState, sourceConfigured, startImport } from "@/lib/importer"
+import { importState, mediaSourceConfigured, sourceConfigured, startImport } from "@/lib/importer"
 import { bucketConfigured } from "@/lib/media"
 
 // Статус импорта из qoz-vision
@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     state: importState,
     sourceConfigured: sourceConfigured(),
-    mediaSourceConfigured: !!(process.env.SOURCE_SUPABASE_URL && process.env.SOURCE_SUPABASE_SERVICE_ROLE_KEY),
+    mediaSourceConfigured: mediaSourceConfigured(),
     bucketConfigured: bucketConfigured(),
     inDb: { journal, live, cameras, facilities, withMedia, mediaPending },
   })

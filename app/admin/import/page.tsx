@@ -78,7 +78,7 @@ export default function ImportPage() {
           <>
             <div className="bg-card border border-border rounded-2xl p-5 shadow-sm grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
               <Check ok={st.sourceConfigured} label="База qoz-vision" hint="SOURCE_DATABASE_URL" />
-              <Check ok={st.mediaSourceConfigured} label="Хранилище записей" hint="SOURCE_SUPABASE_URL, …SERVICE_ROLE_KEY" />
+              <Check ok={st.mediaSourceConfigured} label="Хранилище записей" hint="SUPABASE_S3_* (как в qoz-vision)" />
               <Check ok={st.bucketConfigured} label="Хранилище платформы" hint="BUCKET_*" />
             </div>
 
