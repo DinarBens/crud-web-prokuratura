@@ -133,6 +133,13 @@ export async function importRows() {
     } catch (e) {
       throw new Error(`Нет подключения к базе qoz-vision: ${errText(e)}`)
     }
+    // Какие таблицы есть в источнике — для диагностики, если схема не та
+    const tables = await tryRows(
+      sql,
+      `select table_schema || '.' || table_name as t from information_schema.tables
+        where table_schema not in ('pg_catalog','information_schema') order by 1 limit 200`
+    )
+    console.log("[import] таблицы источника:", tables.map((r) => str(r.t)).join(", ") || "нет")
     // ---- пользователи ----
     const admins = (process.env.IMPORT_ADMIN_EMAILS || "admin@gmail.com").split(",").map((e) => e.trim().toLowerCase())
     const users = await tryRows(sql, "select email, password_hash from public.app_users")
