@@ -54,11 +54,19 @@ const str = (v: unknown) => (v === null || v === undefined ? "" : String(v)).tri
 const num = (v: unknown) => (v === null || v === undefined || v === "" ? null : Number(v))
 const date = (v: unknown) => (v instanceof Date ? v : v ? new Date(String(v)) : new Date())
 
+function errText(e: unknown): string {
+  if (e && typeof e === "object") {
+    const o = e as { message?: string; code?: string; errno?: string }
+    return [o.code, o.errno, o.message].filter(Boolean).join(" ") || String(e)
+  }
+  return String(e)
+}
+
 async function tryRows(sql: postgres.Sql, query: string): Promise<Row[]> {
   try {
     return (await sql.unsafe(query)) as unknown as Row[]
   } catch (e) {
-    importState.errors.push(`${query.slice(0, 60)}…: ${e instanceof Error ? e.message : e}`)
+    importState.errors.push(`${query.slice(0, 60)}…: ${errText(e)}`)
     return []
   }
 }
@@ -119,6 +127,12 @@ export async function importRows() {
   const sql = connectSource()
   const counts: Record<string, number> = {}
   try {
+    // Проверка подключения: без неё все запросы молча вернут пустоту
+    try {
+      await sql`select 1`
+    } catch (e) {
+      throw new Error(`Нет подключения к базе qoz-vision: ${errText(e)}`)
+    }
     // ---- пользователи ----
     const admins = (process.env.IMPORT_ADMIN_EMAILS || "admin@gmail.com").split(",").map((e) => e.trim().toLowerCase())
     const users = await tryRows(sql, "select email, password_hash from public.app_users")
@@ -335,6 +349,7 @@ export function startImport(opts: { media: boolean }) {
       importState.phase = "error"
       importState.message = e instanceof Error ? e.message : String(e)
       console.error("[import] ошибка:", importState.message)
+      importState.errors.push(importState.message)
     } finally {
       importState.finishedAt = new Date().toISOString()
       running = null
