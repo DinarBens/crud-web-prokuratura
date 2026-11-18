@@ -289,7 +289,9 @@ export async function importRows() {
 type SourceObject = { body: ReadableStream<Uint8Array>; size: number; type: string | null; cancel: () => Promise<void> }
 
 function sourceS3(): S3Client | null {
-  const endpoint = process.env.SUPABASE_S3_ENDPOINT?.trim()
+  // Адрес S3 у Supabase стандартный: <URL проекта>/storage/v1/s3 — выводим его сами, если не задан
+  const projectUrl = (process.env.SOURCE_SUPABASE_URL || "").trim().replace(/\/$/, "")
+  const endpoint = process.env.SUPABASE_S3_ENDPOINT?.trim() || (projectUrl ? `${projectUrl}/storage/v1/s3` : "")
   const accessKeyId = process.env.SUPABASE_S3_ACCESS_KEY_ID?.trim()
   const secretAccessKey = process.env.SUPABASE_S3_SECRET_ACCESS_KEY?.trim()
   if (!endpoint || !accessKeyId || !secretAccessKey) return null
@@ -313,7 +315,8 @@ export async function copyMedia() {
   const s3src = sourceS3()
   if (!mediaSourceConfigured() || !bucketConfigured()) {
     const missing = ["BUCKET_ENDPOINT", "BUCKET_NAME", "BUCKET_ACCESS_KEY_ID", "BUCKET_SECRET_ACCESS_KEY"].filter((n) => !process.env[n]?.trim())
-    if (!mediaSourceConfigured()) missing.push("SUPABASE_S3_ENDPOINT / SUPABASE_S3_ACCESS_KEY_ID / SUPABASE_S3_SECRET_ACCESS_KEY (или SOURCE_SUPABASE_SERVICE_ROLE_KEY)")
+    if (!mediaSourceConfigured())
+      missing.push(...["SUPABASE_S3_ACCESS_KEY_ID", "SUPABASE_S3_SECRET_ACCESS_KEY", "SOURCE_SUPABASE_URL"].filter((n) => !process.env[n]?.trim()))
     importState.errors.push(`Медиа не копировались: пустые переменные ${missing.join(", ")}`)
     return
   }
